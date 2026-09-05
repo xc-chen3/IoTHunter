@@ -55,7 +55,7 @@ function waitForHealth(attempts = 50) {
 async function createWindow() {
   startSidecar();
   await waitForHealth();
-  const iconCandidates = [path.join(__dirname, '..', 'logo.png'), path.join(process.resourcesPath, 'logo.png')];
+  const iconCandidates = [path.join(__dirname, '..', 'logo2.png'), path.join(process.resourcesPath, 'logo2.png')];
   const iconPath = iconCandidates.find((candidate) => existsSync(candidate));
   const icon = iconPath ? nativeImage.createFromPath(iconPath) : undefined;
   const window = new BrowserWindow({

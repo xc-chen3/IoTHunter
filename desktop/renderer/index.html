@@ -9,35 +9,34 @@
 <body>
   <div class="window">
     <aside class="sidebar">
-      <div class="brand"><img src="../../logo.png" alt="IoTHunter"><span class="brand-mark">I</span><span>IoTHunter</span></div>
-      <div class="workspace-switcher"><span class="label">WORKSPACE</span><select id="workspace-select"><option value="">Select workspace</option></select></div>
+      <div class="brand"><img src="../../logo2.png" alt="IoTHunter"><span>IoTHunter</span></div>
       <div class="nav-scroll">
-        <div class="nav-label">Research</div>
+        <div class="nav-label" data-i18n="Research">Research</div>
         <nav class="nav">
-          <button data-page="overview"><span class="icon">&#9633;</span>Overview</button>
-          <button data-page="workspaces"><span class="icon">&#9632;</span>Workspaces</button>
-          <button data-page="targets"><span class="icon">&#9670;</span>Targets</button>
-          <button data-page="tasks"><span class="icon">&#9654;</span>Tasks</button>
-          <button data-page="findings"><span class="icon">!</span>Findings</button>
-          <button data-page="evidence"><span class="icon">&#8776;</span>Evidence</button>
+          <button data-page="overview"><span class="icon">&#9633;</span><span data-i18n="Overview">Overview</span></button>
+          <button data-page="workspaces"><span class="icon">&#9632;</span><span data-i18n="Workspaces">Workspaces</span></button>
+          <button data-page="targets"><span class="icon">&#9670;</span><span data-i18n="Targets">Targets</span></button>
+          <button data-page="tasks"><span class="icon">&#9654;</span><span data-i18n="Tasks">Tasks</span></button>
+          <button data-page="findings"><span class="icon">!</span><span data-i18n="Findings">Findings</span></button>
+          <button data-page="evidence"><span class="icon">&#8776;</span><span data-i18n="Evidence">Evidence</span></button>
         </nav>
-        <div class="nav-label">Runtime</div>
+        <div class="nav-label" data-i18n="Runtime">Runtime</div>
         <nav class="nav">
-          <button data-page="agents"><span class="icon">&#9673;</span>Agents</button>
-          <button data-page="capabilities"><span class="icon">&#10022;</span>Capabilities</button>
-          <button data-page="tools"><span class="icon">&#9881;</span>Tools</button>
-          <button data-page="devices"><span class="icon">&#9638;</span>Devices</button>
+          <button data-page="agents"><span class="icon">&#9673;</span><span data-i18n="Agents">Agents</span></button>
+          <button data-page="capabilities"><span class="icon">&#10022;</span><span data-i18n="Capabilities">Capabilities</span></button>
+          <button data-page="tools"><span class="icon">&#9881;</span><span data-i18n="Tools">Tools</span></button>
+          <button data-page="devices"><span class="icon">&#9638;</span><span data-i18n="Devices">Devices</span></button>
         </nav>
-        <div class="nav-label">Knowledge</div>
+        <div class="nav-label" data-i18n="Knowledge">Knowledge</div>
         <nav class="nav">
-          <button data-page="skills"><span class="icon">&#10024;</span>Skills</button>
-          <button data-page="knowledge"><span class="icon">&#9776;</span>Knowledge base</button>
+          <button data-page="skills"><span class="icon">&#10024;</span><span data-i18n="Skills">Skills</span></button>
+          <button data-page="knowledge"><span class="icon">&#9776;</span><span data-i18n="Knowledge base">Knowledge base</span></button>
         </nav>
-        <div class="nav-label">Operations</div>
+        <div class="nav-label" data-i18n="Operations">Operations</div>
         <nav class="nav">
-          <button data-page="approvals"><span class="icon">&#10003;</span>Approvals</button>
-          <button data-page="events"><span class="icon">&#8599;</span>Events</button>
-          <button data-page="audit"><span class="icon">&#8801;</span>Audit log</button>
+          <button data-page="approvals"><span class="icon">&#10003;</span><span data-i18n="Approvals">Approvals</span></button>
+          <button data-page="events"><span class="icon">&#8599;</span><span data-i18n="Events">Events</span></button>
+          <button data-page="audit"><span class="icon">&#8801;</span><span data-i18n="Audit log">Audit log</span></button>
         </nav>
       </div>
       <div class="sidebar-footer"><span class="online-dot"></span><span id="connection">Local control plane</span><span class="version">v0.2.0</span></div>
@@ -45,10 +44,15 @@
     <main class="main">
       <header class="topbar">
         <div class="window-controls"><button id="back" aria-label="Back">&#8249;</button><button id="forward" aria-label="Forward">&#8250;</button></div>
-        <div class="tabs" id="tabs"></div>
-        <button class="refresh" id="refresh" title="Refresh">&#8635;</button>
+        <div class="search"><span>&#8981;</span><input id="global-search" data-i18n-placeholder="Search targets, tasks, findings, capabilities" placeholder="Search targets, tasks, findings, capabilities"><kbd>Ctrl K</kbd></div>
+        <select id="workspace-select" class="workspace-picker"><option value="">Select workspace</option></select>
+        <button id="language" class="top-action" title="Language">中 / EN</button><button id="settings" class="top-action" title="Settings">&#9881;</button><button id="refresh" class="refresh" title="Refresh">&#8635;</button>
       </header>
-      <section class="content" id="content"><div class="loading">Loading IoTHunter...</div></section>
+      <div class="workbench">
+        <aside class="queue" id="queue"></aside>
+        <section class="content" id="content"><div class="loading">Loading IoTHunter...</div></section>
+        <aside class="inspector" id="inspector"></aside>
+      </div>
     </main>
   </div>
   <div id="toast" class="toast"></div>

@@ -9,6 +9,7 @@
   "scripts": {
     "start": "electron . --no-sandbox",
     "dev": "electron . --no-sandbox",
+    "test": "node --check main.cjs && node --check preload.cjs && node --check renderer/renderer.js",
     "package": "electron-builder --dir",
     "dist": "electron-builder"
   },
@@ -20,7 +21,7 @@
     "appId": "com.iothunter.desktop",
     "productName": "IoTHunter",
     "files": ["main.cjs", "preload.cjs", "renderer/**/*"],
-    "extraResources": [{ "from": "../bin/iothunter", "to": "iothunter" }, { "from": "../logo.png", "to": "logo.png" }],
+    "extraResources": [{ "from": "../bin/iothunter", "to": "iothunter" }, { "from": "../logo2.png", "to": "logo2.png" }],
     "directories": { "output": "dist" },
     "linux": { "target": ["AppImage", "deb"], "category": "Development" },
     "mac": { "target": ["dmg"] },

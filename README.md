@@ -73,7 +73,7 @@ go run ./cmd/iothunter serve --addr :8080 --data .iothunter/state.json
 
 ## Native desktop client
 
-IoTHunter is distributed as a native Electron desktop client with a local Go control-plane sidecar. It opens a dedicated application window, not a browser page. The client follows the MultiCa-style shell: a persistent workspace sidebar, tabs, back/forward navigation, and independently scrollable research views.
+IoTHunter is distributed as a native Electron desktop client with a local Go control-plane sidecar. It opens a dedicated application window, not a browser page. The client follows the supplied MultiCa-style shell: a four-pane workbench with navigation, task queue, main research canvas, and inspector. Chinese and English can be switched from the top bar, and the bundled application icon is `logo2.png`.
 
 ~~~bash
 make build

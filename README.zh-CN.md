@@ -73,7 +73,7 @@ go run ./cmd/iothunter serve --addr :8080 --data .iothunter/state.json
 
 ## 原生桌面客户端
 
-IoTHunter 使用原生 Electron 桌面客户端，Go 控制平面作为本地 sidecar 进程运行。启动后会打开独立的应用窗口，不会跳转浏览器。客户端参考 MultiCa 的交互模式，提供固定工作区侧栏、标签页、前进后退和独立滚动的研究页面。
+IoTHunter 使用原生 Electron 桌面客户端，Go 控制平面作为本地 sidecar 进程运行。启动后会打开独立的应用窗口，不会跳转浏览器。客户端参考提供的 MultiCa 界面，采用左侧导航、任务列表、中间研究工作区和右侧详情检查器的四栏工作台。顶部可以切换中文和英文，打包后的应用图标使用 `logo2.png`。
 
 ~~~bash
 make build
