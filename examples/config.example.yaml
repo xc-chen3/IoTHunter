@@ -1,0 +1,27 @@
+server:
+  address: ":8080"
+  data_file: ".iothunter/state.json"
+
+scheduler:
+  max_workers: 4
+
+security:
+  require_authorized_target: true
+  default_filesystem: "workspace-readonly"
+  approval_for:
+    - device
+    - destructive
+
+models:
+  commander:
+    provider: "openai-compatible"
+    model: "replace-me"
+    endpoint: "http://localhost:11434/v1"
+  recon:
+    provider: "local"
+    model: "replace-me"
+
+workers:
+  knowledge.search:
+    command: ["python3", "capability-workers/knowledge/worker.py"]
+    protocol: "ndjson"

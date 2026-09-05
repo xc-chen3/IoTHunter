@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/iothunter/iothunter/schemas/finding.schema.json",
+  "title": "IoTHunter Finding",
+  "type": "object",
+  "required": ["finding_id", "workspace_id", "title", "state", "priority", "confidence", "evidence_ids"],
+  "properties": {
+    "finding_id": {"type": "string"},
+    "workspace_id": {"type": "string"},
+    "target_id": {"type": "string"},
+    "title": {"type": "string", "minLength": 1},
+    "state": {"enum": ["hypothesis", "candidate", "analyzing", "ready_for_validation", "validating", "validated", "reportable", "reported", "knowledge_captured", "dropped"]},
+    "priority": {"type": "string", "pattern": "^P[0-3]$"},
+    "score": {"type": "number", "minimum": 0, "maximum": 100},
+    "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+    "evidence_ids": {"type": "array", "items": {"type": "string"}},
+    "artifact_ids": {"type": "array", "items": {"type": "string"}},
+    "validation": {"type": "object"},
+    "cwe": {"type": "array", "items": {"type": "string"}}
+  },
+  "additionalProperties": true
+}

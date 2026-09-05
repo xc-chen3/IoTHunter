@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/iothunter/iothunter/schemas/task.schema.json",
+  "title": "IoTHunter Task",
+  "type": "object",
+  "required": ["id", "workspace_id", "type", "objective", "status", "permissions", "budget"],
+  "properties": {
+    "id": {"type": "string"},
+    "workspace_id": {"type": "string"},
+    "target_id": {"type": "string"},
+    "finding_id": {"type": "string"},
+    "type": {"type": "string"},
+    "objective": {"type": "string", "minLength": 1},
+    "priority": {"type": "integer", "minimum": 0, "maximum": 100},
+    "status": {"enum": ["queued", "assigned", "running", "completed", "failed", "blocked", "paused", "cancelled"]},
+    "required_capabilities": {"type": "array", "items": {"type": "string"}},
+    "permissions": {
+      "type": "object",
+      "required": ["network", "filesystem", "device", "destructive"],
+      "properties": {
+        "network": {"type": "boolean"},
+        "filesystem": {"type": "string"},
+        "device": {"type": "boolean"},
+        "destructive": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    },
+    "budget": {
+      "type": "object",
+      "properties": {
+        "max_runtime_seconds": {"type": "integer", "minimum": 1},
+        "max_tool_calls": {"type": "integer", "minimum": 1},
+        "max_tokens": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,7 @@
+.iothunter/
+bin/
+dist/
+*.tmp
+*.log
+coverage.out
+.DS_Store
