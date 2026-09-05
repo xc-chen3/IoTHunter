@@ -85,6 +85,23 @@ npm --prefix desktop start
 
 控制台还覆盖架构中的控制面对象：Agent 池、Skill 工作流、Evidence 和 Artifact 记录、Approval 队列、Event 流、Audit Log、CapabilityRun、ToolRun、GateDecision 和 Knowledge。Finding Gate，以及 Task 的暂停、恢复、重试和取消操作，都可以通过接口执行并在工作空间视图中查看。
 
+### 主机本地运行时
+
+桌面客户端会发现主机上已经安装的 AI 命令行运行时，并允许为每个 Agent 关联一个运行时。当前支持 Claude Code（`claude`）、Codex CLI（`codex`）、Grok CLI（`grok`）和 Kiro CLI（`kiro-cli`），会检查主机 `PATH` 以及常见的用户目录。运行时页面会显示可执行文件路径、版本、提供商、可用状态和最近检查时间。点击“检查”只执行短时的 `--version` 探测；点击“探测帮助”只读取 `--help` 输出，不会启动交互会话，也不会发送研究提示词。
+
+对应的 API 如下：
+
+~~~bash
+curl http://127.0.0.1:8080/api/v1/runtimes
+curl -X POST http://127.0.0.1:8080/api/v1/runtimes/codex/check
+curl -X POST http://127.0.0.1:8080/api/v1/runtimes/codex/probe
+curl -X POST http://127.0.0.1:8080/api/v1/agents/commander-default \
+  -H 'Content-Type: application/json' \
+  -d '{"runtime_id":"codex"}'
+~~~
+
+运行时发现不会读取或返回 API key、token 和提示词，也不会返回超出长度限制的命令输出。认证状态在加入各提供商的登录检查前显示为 `unknown`；关联运行时只会把选定的本地可执行文件记录到 Agent 配置中。
+
 编译 Go 控制服务和桌面客户端：
 
 ~~~bash

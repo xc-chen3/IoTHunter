@@ -2,7 +2,7 @@
 
 English | [中文](README.zh-CN.md)
 
-IoTHunter is a capability-isolated, multi-agent research harness for IoT security work. It separates the control plane, agents, capabilities, and tool runtimes, with Finding and Evidence as the source of truth. The system supports recoverable tasks, least-privilege execution, human approval, audit logs, and report generation.
+IoTHunter is a capability-isolated, multi-agent research system for IoT security work. It separates the control plane, agents, capabilities, and tool runtimes, with Finding and Evidence as the source of truth. The system supports recoverable tasks, least-privilege execution, human approval, audit logs, and report generation.
 
 This repository contains a runnable core MVP. It does not require PostgreSQL, Redis, Docker, or an LLM service. The default store is a local JSON file, which makes the project easy to try, extend, and publish on GitHub. Production deployments can replace the store with PostgreSQL, add object storage, and run capabilities inside containers or remote workers.
 
@@ -22,7 +22,7 @@ The responsibilities are intentionally separated:
 Agent       understands, decides, and evaluates
 Capability  exposes a reusable, testable specialist function
 Tool        performs the concrete execution
-Harness     controls scheduling, permissions, state, audit, and recovery
+Control plane controls scheduling, permissions, state, audit, and recovery
 ~~~
 
 Core principles:
@@ -84,6 +84,23 @@ npm --prefix desktop start
 The desktop process automatically starts `bin/iothunter serve` on a loopback port and stores state in the platform application-data directory. To connect the client to an already running API, use `IOTHUNTER_API_URL` or `./bin/iothunter desktop --api-url http://127.0.0.1:8080`.
 
 The console also exposes the architecture's control-plane objects: Agent pool, Skill workflows, Evidence and Artifact records, Approval queue, Event stream, Audit Log, CapabilityRun, ToolRun, GateDecision, and Knowledge items. Finding Gate actions and Task pause/resume/retry/cancel operations are available from the API and are reflected in the workspace view.
+
+### Host runtime integration
+
+The desktop client discovers locally installed AI command-line runtimes and lets you associate one with each Agent. Claude Code (`claude`), Codex CLI (`codex`), Grok CLI (`grok`), and Kiro CLI (`kiro-cli`) are detected from the host `PATH` and common per-user install locations. The Runtime page shows the executable path, version, provider, availability, and the last check time. `Check` runs a short `--version` probe; `Probe help` reads `--help` output only and never starts an interactive session or sends a research prompt.
+
+The API exposes the same integration:
+
+~~~bash
+curl http://127.0.0.1:8080/api/v1/runtimes
+curl -X POST http://127.0.0.1:8080/api/v1/runtimes/codex/check
+curl -X POST http://127.0.0.1:8080/api/v1/runtimes/codex/probe
+curl -X POST http://127.0.0.1:8080/api/v1/agents/commander-default \
+  -H 'Content-Type: application/json' \
+  -d '{"runtime_id":"codex"}'
+~~~
+
+Runtime discovery does not read or return API keys, tokens, prompts, or command output beyond a bounded help preview. Authentication is reported as `unknown` until a provider-specific login check is added; binding a runtime only records the selected local executable for the Agent.
 
 Check the service and registries:
 

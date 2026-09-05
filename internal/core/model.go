@@ -56,9 +56,27 @@ type Agent struct {
 	Role           string `json:"role"`
 	ModelProvider  string `json:"model_provider,omitempty"`
 	Model          string `json:"model,omitempty"`
+	RuntimeID      string `json:"runtime_id,omitempty"`
 	Enabled        bool   `json:"enabled"`
 	Status         string `json:"status"`
 	MaxConcurrency int    `json:"max_concurrency"`
+}
+
+// LocalRuntime describes a locally installed AI CLI without exposing secrets
+// or starting an interactive/model session.
+type LocalRuntime struct {
+	ID           string    `json:"id"`
+	Name         string    `json:"name"`
+	Provider     string    `json:"provider"`
+	Command      string    `json:"command"`
+	Path         string    `json:"path,omitempty"`
+	Available    bool      `json:"available"`
+	Status       string    `json:"status"`
+	Version      string    `json:"version,omitempty"`
+	AuthState    string    `json:"auth_state,omitempty"`
+	Capabilities []string  `json:"capabilities,omitempty"`
+	LastChecked  time.Time `json:"last_checked"`
+	Error        string    `json:"error,omitempty"`
 }
 
 type Skill struct {

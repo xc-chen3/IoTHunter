@@ -56,3 +56,36 @@ func TestAPIRootIdentifiesDesktopClient(t *testing.T) {
 		t.Fatal("desktop client marker missing")
 	}
 }
+
+func TestAPIRuntimeRegistryAndAgentBindingValidation(t *testing.T) {
+	store, _ := NewStore("")
+	server := NewAPIServer(NewEngine(store, 1)).Handler()
+	request := func(method, path string, body any) *httptest.ResponseRecorder {
+		var payload bytes.Buffer
+		if body != nil {
+			_ = json.NewEncoder(&payload).Encode(body)
+		}
+		r := httptest.NewRequest(method, path, &payload)
+		r.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		server.ServeHTTP(w, r)
+		return w
+	}
+	w := request(http.MethodGet, "/api/v1/runtimes", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("runtime registry status = %d", w.Code)
+	}
+	var registry struct {
+		Runtimes []LocalRuntime `json:"runtimes"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&registry); err != nil {
+		t.Fatal(err)
+	}
+	if len(registry.Runtimes) != 4 {
+		t.Fatalf("runtime count = %d, want 4", len(registry.Runtimes))
+	}
+	w = request(http.MethodPost, "/api/v1/agents/commander-default", map[string]string{"runtime_id": "does-not-exist"})
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("invalid runtime binding status = %d", w.Code)
+	}
+}

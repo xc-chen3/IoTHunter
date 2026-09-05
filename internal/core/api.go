@@ -22,6 +22,8 @@ func (a *APIServer) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/tools", a.tools)
 	mux.HandleFunc("/api/v1/agents", a.agents)
 	mux.HandleFunc("/api/v1/agents/", a.agentRoutes)
+	mux.HandleFunc("/api/v1/runtimes", a.runtimes)
+	mux.HandleFunc("/api/v1/runtimes/", a.runtimeRoutes)
 	mux.HandleFunc("/api/v1/skills", a.skills)
 	mux.HandleFunc("/api/v1/knowledge", a.knowledge)
 	mux.HandleFunc("/api/v1/events", a.events)
@@ -128,14 +130,28 @@ func (a *APIServer) agentRoutes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var patch struct {
-		ModelProvider  string `json:"model_provider"`
-		Model          string `json:"model"`
-		Enabled        *bool  `json:"enabled"`
-		MaxConcurrency int    `json:"max_concurrency"`
+		ModelProvider  string  `json:"model_provider"`
+		Model          string  `json:"model"`
+		RuntimeID      *string `json:"runtime_id"`
+		Enabled        *bool   `json:"enabled"`
+		MaxConcurrency int     `json:"max_concurrency"`
 	}
 	if err := decode(r, &patch); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
+	}
+	if patch.RuntimeID != nil && strings.TrimSpace(*patch.RuntimeID) != "" {
+		runtimeID := strings.TrimSpace(*patch.RuntimeID)
+		spec, ok := localRuntimeSpec(runtimeID)
+		if !ok {
+			writeError(w, http.StatusBadRequest, fmt.Errorf("unknown runtime %q", runtimeID))
+			return
+		}
+		if runtimePath(spec) == "" {
+			writeError(w, http.StatusBadRequest, fmt.Errorf("runtime %q is not installed", runtimeID))
+			return
+		}
+		patch.ModelProvider = spec.provider
 	}
 	found := false
 	if err := a.Engine.Store.mutate(func(state *State) error {
@@ -149,6 +165,9 @@ func (a *APIServer) agentRoutes(w http.ResponseWriter, r *http.Request) {
 			}
 			if patch.Model != "" {
 				state.Agents[i].Model = patch.Model
+			}
+			if patch.RuntimeID != nil {
+				state.Agents[i].RuntimeID = strings.TrimSpace(*patch.RuntimeID)
 			}
 			if patch.Enabled != nil {
 				state.Agents[i].Enabled = *patch.Enabled
@@ -173,6 +192,53 @@ func (a *APIServer) agentRoutes(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusOK, agent)
 			return
 		}
+	}
+}
+
+func (a *APIServer) runtimes(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, fmt.Errorf("method not allowed"))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"runtimes": discoverLocalRuntimes(r.Context())})
+}
+
+func (a *APIServer) runtimeRoutes(w http.ResponseWriter, r *http.Request) {
+	parts := pathParts(r.URL.Path, "/api/v1/runtimes/")
+	if len(parts) != 2 || r.Method != http.MethodPost {
+		writeError(w, http.StatusNotFound, fmt.Errorf("runtime route not found"))
+		return
+	}
+	runtimeID := parts[0]
+	spec, ok := localRuntimeSpec(runtimeID)
+	if !ok {
+		writeError(w, http.StatusNotFound, fmt.Errorf("runtime %q not found", runtimeID))
+		return
+	}
+	switch parts[1] {
+	case "check":
+		var found *LocalRuntime
+		for _, item := range discoverLocalRuntimes(r.Context()) {
+			if item.ID == runtimeID {
+				copy := item
+				found = &copy
+				break
+			}
+		}
+		if found == nil {
+			writeError(w, http.StatusNotFound, fmt.Errorf("runtime %q not found", runtimeID))
+			return
+		}
+		writeJSON(w, http.StatusOK, found)
+	case "probe":
+		runtime, output, err := probeLocalRuntime(r.Context(), runtimeID)
+		if err != nil {
+			writeJSON(w, http.StatusBadGateway, map[string]any{"runtime": runtime, "error": safeRuntimeError(err)})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"runtime": runtime, "output": output, "note": "help output only; no model session was started"})
+	default:
+		writeError(w, http.StatusNotFound, fmt.Errorf("unsupported runtime action %q for %s", parts[1], spec.name))
 	}
 }
 
