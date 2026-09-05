@@ -39,3 +39,20 @@ func TestAPIWorkspaceTargetAndRun(t *testing.T) {
 		t.Fatalf("run status = %d", w.Code)
 	}
 }
+
+func TestAPIServesEmbeddedUI(t *testing.T) {
+	store, _ := NewStore("")
+	server := NewAPIServer(NewEngine(store, 1)).Handler()
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	res := httptest.NewRecorder()
+	server.ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("UI status = %d", res.Code)
+	}
+	if got := res.Header().Get("Content-Type"); got != "text/html; charset=utf-8" {
+		t.Fatalf("UI content type = %q", got)
+	}
+	if !bytes.Contains(res.Body.Bytes(), []byte("<title>IoTHunter</title>")) {
+		t.Fatal("embedded UI title missing")
+	}
+}

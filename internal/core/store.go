@@ -88,8 +88,20 @@ func (s *Store) CreateWorkspace(w Workspace) error {
 func (s *Store) CreateTarget(t Target) error {
 	return s.mutate(func(st *State) error { st.Targets = append(st.Targets, t); return nil })
 }
+func (s *Store) CreateDevice(d Device) error {
+	return s.mutate(func(st *State) error { st.Devices = append(st.Devices, d); return nil })
+}
 func (s *Store) CreateTask(t Task) error {
 	return s.mutate(func(st *State) error { st.Tasks = append(st.Tasks, t); return nil })
+}
+func (s *Store) AddAgent(a Agent) error {
+	return s.mutate(func(st *State) error { st.Agents = append(st.Agents, a); return nil })
+}
+func (s *Store) AddSkill(v Skill) error {
+	return s.mutate(func(st *State) error { st.Skills = append(st.Skills, v); return nil })
+}
+func (s *Store) AddKnowledge(v KnowledgeItem) error {
+	return s.mutate(func(st *State) error { st.Knowledge = append(st.Knowledge, v); return nil })
 }
 func (s *Store) CreateFinding(f Finding) error {
 	return s.mutate(func(st *State) error { st.Findings = append(st.Findings, f); return nil })
@@ -108,6 +120,18 @@ func (s *Store) AddEvidence(e Evidence) error {
 }
 func (s *Store) AddArtifact(a Artifact) error {
 	return s.mutate(func(st *State) error { st.Artifacts = append(st.Artifacts, a); return nil })
+}
+func (s *Store) AddAgentRun(v AgentRun) error {
+	return s.mutate(func(st *State) error { st.AgentRuns = append(st.AgentRuns, v); return nil })
+}
+func (s *Store) AddCapabilityRun(v CapabilityRun) error {
+	return s.mutate(func(st *State) error { st.CapabilityRuns = append(st.CapabilityRuns, v); return nil })
+}
+func (s *Store) AddToolRun(v ToolRun) error {
+	return s.mutate(func(st *State) error { st.ToolRuns = append(st.ToolRuns, v); return nil })
+}
+func (s *Store) AddGate(v GateDecision) error {
+	return s.mutate(func(st *State) error { st.Gates = append(st.Gates, v); return nil })
 }
 func (s *Store) AddApproval(a Approval) error {
 	return s.mutate(func(st *State) error { st.Approvals = append(st.Approvals, a); return nil })

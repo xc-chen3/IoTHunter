@@ -1,6 +1,6 @@
 APP := iothunter
 
-.PHONY: test vet fmt build build-all demo serve capabilities
+.PHONY: test vet fmt build build-all demo serve desktop capabilities
 
 test:
 	go test ./...
@@ -28,6 +28,9 @@ demo:
 
 serve:
 	go run ./cmd/iothunter serve
+
+desktop:
+	go run ./cmd/iothunter desktop
 
 capabilities:
 	go run ./cmd/iothunter capabilities

@@ -71,6 +71,19 @@ go run ./cmd/iothunter demo --data .iothunter/state.json
 go run ./cmd/iothunter serve --addr :8080 --data .iothunter/state.json
 ~~~
 
+## 本地可视化客户端
+
+服务端和前端页面已经内嵌在同一个 Go 二进制中，不需要 Node.js、前端构建环境或第二个进程。编译并启动本地客户端：
+
+~~~bash
+make build
+./bin/iothunter desktop --addr 127.0.0.1:8080 --data .iothunter/state.json
+~~~
+
+命令会启动本地控制服务，并尝试在默认浏览器打开 `http://127.0.0.1:8080`。页面包含工作空间和目标录入、研究任务、任务与发现状态、能力和工具列表，以及报告预览。在无桌面环境中，手动打开终端打印的地址即可。
+
+控制台还覆盖架构中的控制面对象：Agent 池、Skill 工作流、Evidence 和 Artifact 记录、Approval 队列、Event 流、Audit Log、CapabilityRun、ToolRun、GateDecision 和 Knowledge。Finding Gate，以及 Task 的暂停、恢复、重试和取消操作，都可以通过接口执行并在工作空间视图中查看。
+
 编译成独立客户端和服务端二进制：
 
 ~~~bash
@@ -148,6 +161,20 @@ curl -X POST http://127.0.0.1:8080/api/v1/approvals/APR-xxxx \
   -H 'Content-Type: application/json' \
   -d '{"status":"approved","actor":"alice"}'
 ~~~
+
+Commander 计划和质量门：
+
+~~~bash
+curl -X POST http://127.0.0.1:8080/api/v1/workspaces/W-xxxx/plan \
+  -H 'Content-Type: application/json' \
+  -d '{"target_id":"T-xxxx","objective":"离线分析","capabilities":["target.fingerprint","web.route_discovery"]}'
+
+curl -X POST http://127.0.0.1:8080/api/v1/findings/F-xxxx/gate \
+  -H 'Content-Type: application/json' \
+  -d '{"gate":"finding"}'
+~~~
+
+Agent、Skill、Knowledge、Event 和 Audit 接口分别位于 `/api/v1/agents`、`/api/v1/skills`、`/api/v1/knowledge`、`/api/v1/events` 和 `/api/v1/audit`。后续可以使用同一套结构化请求/结果模型替换内置离线能力。
 
 ## 数据和目录
 

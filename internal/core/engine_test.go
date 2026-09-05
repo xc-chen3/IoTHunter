@@ -67,3 +67,33 @@ func TestFindingTransitionsRejectInvalidState(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestArchitectureRegistriesAndFindingGate(t *testing.T) {
+	store, err := NewStore("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine := NewEngine(store, 2)
+	if len(engine.Capabilities()) < 20 {
+		t.Fatalf("capability catalog too small: %d", len(engine.Capabilities()))
+	}
+	state := store.Snapshot()
+	if len(state.Agents) < 4 || len(state.Skills) < 3 {
+		t.Fatalf("default control-plane registries are incomplete")
+	}
+	w, _ := engine.CreateWorkspace("gate", "tester", "")
+	f := Finding{ID: NewID("F"), WorkspaceID: w.ID, State: FindingCandidate, Confidence: .8, Score: 60, AttackSurface: AttackSurface{Type: "web"}, Validation: Validation{State: "not_started"}, CreatedAt: now(), UpdatedAt: now()}
+	if err := store.CreateFinding(f); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AddEvidence(Evidence{ID: NewID("E"), FindingID: f.ID, Type: "manual_review", Confidence: .8, Content: map[string]any{"ok": true}, CreatedAt: now()}); err != nil {
+		t.Fatal(err)
+	}
+	decision, err := engine.EvaluateGate(f.ID, "finding")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decision.Decision != "PASS" {
+		t.Fatalf("gate decision = %s", decision.Decision)
+	}
+}

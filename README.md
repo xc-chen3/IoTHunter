@@ -71,6 +71,19 @@ Start the API server:
 go run ./cmd/iothunter serve --addr :8080 --data .iothunter/state.json
 ~~~
 
+## Local UI client
+
+The server and frontend are embedded in the same Go binary. No Node.js, frontend build, or second process is required. Build and launch the local desktop-style client with:
+
+~~~bash
+make build
+./bin/iothunter desktop --addr 127.0.0.1:8080 --data .iothunter/state.json
+~~~
+
+The command starts the local control plane and opens `http://127.0.0.1:8080` in the default browser. The UI includes workspace and target intake, research runs, task and finding state, capability and tool registries, and report preview. On a headless machine, open the printed URL manually.
+
+The console also exposes the architecture's control-plane objects: Agent pool, Skill workflows, Evidence and Artifact records, Approval queue, Event stream, Audit Log, CapabilityRun, ToolRun, GateDecision, and Knowledge items. Finding Gate actions and Task pause/resume/retry/cancel operations are available from the API and are reflected in the workspace view.
+
 Check the service and registries:
 
 ~~~bash
@@ -141,6 +154,20 @@ curl -X POST http://127.0.0.1:8080/api/v1/approvals/APR-xxxx \
   -H 'Content-Type: application/json' \
   -d '{"status":"approved","actor":"alice"}'
 ~~~
+
+Commander planning and quality gates:
+
+~~~bash
+curl -X POST http://127.0.0.1:8080/api/v1/workspaces/W-xxxx/plan \
+  -H 'Content-Type: application/json' \
+  -d '{"target_id":"T-xxxx","objective":"offline analysis","capabilities":["target.fingerprint","web.route_discovery"]}'
+
+curl -X POST http://127.0.0.1:8080/api/v1/findings/F-xxxx/gate \
+  -H 'Content-Type: application/json' \
+  -d '{"gate":"finding"}'
+~~~
+
+Registry and knowledge endpoints are available at `/api/v1/agents`, `/api/v1/skills`, `/api/v1/knowledge`, `/api/v1/events`, and `/api/v1/audit`. Capability workers can use the same structured request/result model to replace the built-in offline implementations.
 
 ## Storage and schemas
 

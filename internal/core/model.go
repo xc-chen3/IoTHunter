@@ -52,11 +52,91 @@ type Target struct {
 }
 
 type Agent struct {
-	ID            string `json:"id"`
-	Role          string `json:"role"`
-	ModelProvider string `json:"model_provider,omitempty"`
-	Model         string `json:"model,omitempty"`
-	Enabled       bool   `json:"enabled"`
+	ID             string `json:"id"`
+	Role           string `json:"role"`
+	ModelProvider  string `json:"model_provider,omitempty"`
+	Model          string `json:"model,omitempty"`
+	Enabled        bool   `json:"enabled"`
+	Status         string `json:"status"`
+	MaxConcurrency int    `json:"max_concurrency"`
+}
+
+type Skill struct {
+	ID          string        `json:"id"`
+	Name        string        `json:"name"`
+	Version     string        `json:"version"`
+	Roles       []string      `json:"roles,omitempty"`
+	Steps       []string      `json:"steps,omitempty"`
+	Outputs     []string      `json:"outputs,omitempty"`
+	Permissions PermissionSet `json:"permissions"`
+}
+
+type KnowledgeItem struct {
+	ID          string         `json:"id"`
+	WorkspaceID string         `json:"workspace_id,omitempty"`
+	Kind        string         `json:"kind"`
+	Title       string         `json:"title"`
+	Content     map[string]any `json:"content"`
+	Tags        []string       `json:"tags,omitempty"`
+	SourceIDs   []string       `json:"source_ids,omitempty"`
+	CreatedAt   time.Time      `json:"created_at"`
+}
+
+type AgentRun struct {
+	ID          string         `json:"id"`
+	AgentID     string         `json:"agent_id"`
+	TaskID      string         `json:"task_id"`
+	Status      string         `json:"status"`
+	Model       string         `json:"model,omitempty"`
+	Input       map[string]any `json:"input,omitempty"`
+	Output      map[string]any `json:"output,omitempty"`
+	StartedAt   time.Time      `json:"started_at"`
+	CompletedAt *time.Time     `json:"completed_at,omitempty"`
+}
+
+type CapabilityRun struct {
+	ID           string         `json:"id"`
+	RequestID    string         `json:"request_id"`
+	TaskID       string         `json:"task_id"`
+	CapabilityID string         `json:"capability_id"`
+	Status       string         `json:"status"`
+	Result       map[string]any `json:"result,omitempty"`
+	StartedAt    time.Time      `json:"started_at"`
+	CompletedAt  *time.Time     `json:"completed_at,omitempty"`
+}
+
+type ToolRun struct {
+	ID          string         `json:"id"`
+	TaskID      string         `json:"task_id"`
+	ToolName    string         `json:"tool_name"`
+	Status      string         `json:"status"`
+	Command     []string       `json:"command,omitempty"`
+	ExitCode    int            `json:"exit_code,omitempty"`
+	Output      map[string]any `json:"output,omitempty"`
+	StartedAt   time.Time      `json:"started_at"`
+	CompletedAt *time.Time     `json:"completed_at,omitempty"`
+}
+
+type GateDecision struct {
+	ID        string    `json:"id"`
+	FindingID string    `json:"finding_id"`
+	Gate      string    `json:"gate"`
+	Decision  string    `json:"decision"`
+	Reasons   []string  `json:"reasons,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+type Device struct {
+	ID          string `json:"id"`
+	WorkspaceID string `json:"workspace_id"`
+	Vendor      string `json:"vendor,omitempty"`
+	Model       string `json:"model,omitempty"`
+	Serial      string `json:"serial,omitempty"`
+	Transport   string `json:"transport,omitempty"`
+	Status      string `json:"status"`
+	Authorized  bool   `json:"authorized"`
+	Owner       string `json:"owner,omitempty"`
+	LockOwner   string `json:"lock_owner,omitempty"`
 }
 
 type PermissionSet struct {
@@ -241,16 +321,24 @@ type AuditLog struct {
 }
 
 type State struct {
-	Version    int         `json:"version"`
-	Workspaces []Workspace `json:"workspaces"`
-	Targets    []Target    `json:"targets"`
-	Tasks      []Task      `json:"tasks"`
-	Findings   []Finding   `json:"findings"`
-	Evidence   []Evidence  `json:"evidence"`
-	Artifacts  []Artifact  `json:"artifacts"`
-	Approvals  []Approval  `json:"approvals"`
-	Events     []Event     `json:"events"`
-	Audit      []AuditLog  `json:"audit"`
+	Version        int             `json:"version"`
+	Workspaces     []Workspace     `json:"workspaces"`
+	Targets        []Target        `json:"targets"`
+	Devices        []Device        `json:"devices"`
+	Agents         []Agent         `json:"agents"`
+	Skills         []Skill         `json:"skills"`
+	Knowledge      []KnowledgeItem `json:"knowledge"`
+	Tasks          []Task          `json:"tasks"`
+	Findings       []Finding       `json:"findings"`
+	Evidence       []Evidence      `json:"evidence"`
+	Artifacts      []Artifact      `json:"artifacts"`
+	AgentRuns      []AgentRun      `json:"agent_runs"`
+	CapabilityRuns []CapabilityRun `json:"capability_runs"`
+	ToolRuns       []ToolRun       `json:"tool_runs"`
+	Gates          []GateDecision  `json:"gate_decisions"`
+	Approvals      []Approval      `json:"approvals"`
+	Events         []Event         `json:"events"`
+	Audit          []AuditLog      `json:"audit"`
 }
 
 func CanTransitionFinding(from, to FindingState) bool {
