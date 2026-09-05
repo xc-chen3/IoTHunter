@@ -89,3 +89,29 @@ func TestAPIRuntimeRegistryAndAgentBindingValidation(t *testing.T) {
 		t.Fatalf("invalid runtime binding status = %d", w.Code)
 	}
 }
+
+func TestAPIIoTSummaryProjection(t *testing.T) {
+	store, _ := NewStore("")
+	engine := NewEngine(store, 1)
+	workspace, err := engine.CreateWorkspace("iot-summary", "test", "device inventory")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := engine.CreateTarget(workspace.ID, Target{Name: "lab-router", Model: "AX73", Authorized: true}); err != nil {
+		t.Fatal(err)
+	}
+	server := NewAPIServer(engine).Handler()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/iot/summary", nil)
+	res := httptest.NewRecorder()
+	server.ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("summary status = %d", res.Code)
+	}
+	var summary map[string]int
+	if err := json.NewDecoder(res.Body).Decode(&summary); err != nil {
+		t.Fatal(err)
+	}
+	if summary["targets"] != 1 {
+		t.Fatalf("targets = %d, want 1", summary["targets"])
+	}
+}

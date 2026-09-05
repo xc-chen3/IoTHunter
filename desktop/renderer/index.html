@@ -9,35 +9,45 @@
 <body>
   <div class="window">
     <aside class="sidebar">
-      <div class="brand"><img src="../../logo2.png" alt="IoTHunter"><span>IoTHunter</span></div>
+      <div class="brand"><img src="../../logo2.png" alt="IoTHunter"><div class="brand-copy"><strong>IoTHunter</strong><small>AI-DRIVEN IOT VULNERABILITY RESEARCH</small></div></div>
       <div class="nav-scroll">
-        <div class="nav-label" data-i18n="Research">Research</div>
+        <div class="nav-label" data-i18n="Workspace">工作台</div>
         <nav class="nav">
-          <button data-page="overview"><span class="icon">&#9633;</span><span data-i18n="Overview">Overview</span></button>
-          <button data-page="workspaces"><span class="icon">&#9632;</span><span data-i18n="Workspaces">Workspaces</span></button>
-          <button data-page="targets"><span class="icon">&#9670;</span><span data-i18n="Targets">Targets</span></button>
-          <button data-page="tasks"><span class="icon">&#9654;</span><span data-i18n="Tasks">Tasks</span></button>
-          <button data-page="findings"><span class="icon">!</span><span data-i18n="Findings">Findings</span></button>
-          <button data-page="evidence"><span class="icon">&#8776;</span><span data-i18n="Evidence">Evidence</span></button>
+          <button data-page="overview"><span class="icon">&#9633;</span><span data-i18n="Chat and tasks">对话与任务</span></button>
+          <button data-page="targets"><span class="icon">&#9670;</span><span data-i18n="Target management">目标管理</span></button>
+          <button data-page="tasks"><span class="icon">&#9654;</span><span data-i18n="Task center">任务中心</span></button>
+          <button data-page="devices"><span class="icon">&#9638;</span><span data-i18n="Device management">设备管理</span></button>
+          <button data-page="files"><span class="icon">&#8776;</span><span data-i18n="Files and samples">文件与样本</span></button>
         </nav>
-        <div class="nav-label" data-i18n="Runtime">Runtime</div>
+        <div class="nav-label" data-i18n="AI agents">AI 智能体</div>
         <nav class="nav">
-          <button data-page="agents"><span class="icon">&#9673;</span><span data-i18n="Agents">Agents</span></button>
-          <button data-page="runtimes"><span class="icon">&#9678;</span><span data-i18n="Local runtimes">Local runtimes</span></button>
-          <button data-page="capabilities"><span class="icon">&#10022;</span><span data-i18n="Capabilities">Capabilities</span></button>
-          <button data-page="tools"><span class="icon">&#9881;</span><span data-i18n="Tools">Tools</span></button>
-          <button data-page="devices"><span class="icon">&#9638;</span><span data-i18n="Devices">Devices</span></button>
+          <button data-page="agents"><span class="icon">&#9673;</span><span data-i18n="Agent management">Agent 管理</span></button>
+          <button data-page="capabilities"><span class="icon">&#10022;</span><span data-i18n="Capability center">能力中心</span></button>
+          <button data-page="skills"><span class="icon">&#10024;</span><span data-i18n="Skill library">技能库 (Skills)</span></button>
+          <button data-page="models"><span class="icon">&#9881;</span><span data-i18n="Model configuration">模型配置</span></button>
         </nav>
-        <div class="nav-label" data-i18n="Knowledge">Knowledge</div>
+        <div class="nav-label" data-i18n="Peripheral management">外设管理</div>
         <nav class="nav">
-          <button data-page="skills"><span class="icon">&#10024;</span><span data-i18n="Skills">Skills</span></button>
-          <button data-page="knowledge"><span class="icon">&#9776;</span><span data-i18n="Knowledge base">Knowledge base</span></button>
+          <button data-page="connections"><span class="icon">&#9737;</span><span data-i18n="Peripheral connections">外设连接</span></button>
+          <button data-page="peripheral-config"><span class="icon">&#9881;</span><span data-i18n="Peripheral configuration">外设配置</span></button>
+          <button data-page="protocols"><span class="icon">&#8776;</span><span data-i18n="Protocol analysis">协议分析</span></button>
         </nav>
-        <div class="nav-label" data-i18n="Operations">Operations</div>
+        <div class="nav-label" data-i18n="Vulnerability management">漏洞管理</div>
         <nav class="nav">
-          <button data-page="approvals"><span class="icon">&#10003;</span><span data-i18n="Approvals">Approvals</span></button>
-          <button data-page="events"><span class="icon">&#8599;</span><span data-i18n="Events">Events</span></button>
-          <button data-page="audit"><span class="icon">&#8801;</span><span data-i18n="Audit log">Audit log</span></button>
+          <button data-page="vulnerabilities"><span class="icon">&#9888;</span><span data-i18n="Vulnerability list">漏洞列表</span></button>
+          <button data-page="vuln-knowledge"><span class="icon">&#9776;</span><span data-i18n="Vulnerability knowledge">漏洞知识库</span></button>
+          <button data-page="risk"><span class="icon">&#10003;</span><span data-i18n="Risk assessment">风险评估</span></button>
+        </nav>
+        <div class="nav-label" data-i18n="Knowledge base">知识库</div>
+        <nav class="nav">
+          <button data-page="vendors"><span class="icon">&#9823;</span><span data-i18n="Vendor profiles">厂商画像</span></button>
+          <button data-page="knowledge"><span class="icon">&#9776;</span><span data-i18n="Vulnerability knowledge">漏洞知识库</span></button>
+          <button data-page="signatures"><span class="icon">&#8776;</span><span data-i18n="Protocol signatures">协议与特征</span></button>
+        </nav>
+        <div class="nav-label" data-i18n="System management">系统管理</div>
+        <nav class="nav">
+          <button data-page="runtime"><span class="icon">&#9678;</span><span data-i18n="Runtime">运行时</span></button>
+          <button data-page="settings"><span class="icon">&#9881;</span><span data-i18n="Settings">设置</span></button>
         </nav>
       </div>
       <div class="sidebar-footer"><span class="online-dot"></span><span id="connection">Local control plane</span><span class="version">v0.2.0</span></div>

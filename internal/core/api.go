@@ -30,6 +30,7 @@ func (a *APIServer) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/audit", a.audit)
 	mux.HandleFunc("/api/v1/workspaces", a.workspaces)
 	mux.HandleFunc("/api/v1/workspaces/", a.workspaceRoutes)
+	mux.HandleFunc("/api/v1/iot/", a.iotRoutes)
 	mux.HandleFunc("/api/v1/findings/", a.findingRoutes)
 	mux.HandleFunc("/api/v1/approvals", a.approvalRoutes)
 	mux.HandleFunc("/api/v1/approvals/", a.approvalRoutes)
@@ -293,6 +294,40 @@ func (a *APIServer) audit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"audit": a.Engine.Store.Snapshot().Audit})
+}
+
+// iotRoutes exposes device-centric projections for the desktop client and
+// integrations. The canonical records remain in the workspace state model.
+func (a *APIServer) iotRoutes(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, fmt.Errorf("method not allowed"))
+		return
+	}
+	st := a.Engine.Store.Snapshot()
+	switch r.URL.Path {
+	case "/api/v1/iot/summary":
+		activeTasks := 0
+		for _, task := range st.Tasks {
+			if task.Status == TaskQueued || task.Status == TaskAssigned || task.Status == TaskRunning {
+				activeTasks++
+			}
+		}
+		connectedDevices := 0
+		for _, device := range st.Devices {
+			if device.Status == "connected" || device.Status == "available" {
+				connectedDevices++
+			}
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"targets": len(st.Targets), "devices": len(st.Devices), "connected_devices": connectedDevices, "active_tasks": activeTasks, "findings": len(st.Findings), "artifacts": len(st.Artifacts), "evidence": len(st.Evidence)})
+	case "/api/v1/iot/devices":
+		writeJSON(w, http.StatusOK, map[string]any{"devices": st.Devices})
+	case "/api/v1/iot/vulnerabilities":
+		writeJSON(w, http.StatusOK, map[string]any{"vulnerabilities": st.Findings})
+	case "/api/v1/iot/artifacts":
+		writeJSON(w, http.StatusOK, map[string]any{"artifacts": st.Artifacts})
+	default:
+		writeError(w, http.StatusNotFound, fmt.Errorf("iot route not found"))
+	}
 }
 
 func (a *APIServer) workspaces(w http.ResponseWriter, r *http.Request) {

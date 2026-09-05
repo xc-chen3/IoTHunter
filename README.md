@@ -83,7 +83,11 @@ npm --prefix desktop start
 
 The desktop process automatically starts `bin/iothunter serve` on a loopback port and stores state in the platform application-data directory. To connect the client to an already running API, use `IOTHUNTER_API_URL` or `./bin/iothunter desktop --api-url http://127.0.0.1:8080`.
 
+The desktop navigation follows an IoT investigation workflow: Workbench (chat/tasks, targets, devices, files and samples), AI Agents, Peripheral Management, Vulnerability Management, Knowledge Base, and System Management. Layouts adapt to the active feature: task conversations use queue + canvas + inspector, device and vulnerability pages use canvas + inspector, and registries use a focused single canvas.
+
 The console also exposes the architecture's control-plane objects: Agent pool, Skill workflows, Evidence and Artifact records, Approval queue, Event stream, Audit Log, CapabilityRun, ToolRun, GateDecision, and Knowledge items. Finding Gate actions and Task pause/resume/retry/cancel operations are available from the API and are reflected in the workspace view.
+
+IoT-specific projections are available at `/api/v1/iot/summary`, `/api/v1/iot/devices`, `/api/v1/iot/vulnerabilities`, and `/api/v1/iot/artifacts`. They provide device-centric views for integrations while preserving workspace authorization boundaries in the canonical records.
 
 ### Host runtime integration
 
