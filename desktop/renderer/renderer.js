@@ -2,6 +2,8 @@ const API = window.iothunter?.apiBase || 'http://127.0.0.1:18080';
 const requestedLang = new URLSearchParams(location.search).get('lang');
 const requestedPage = new URLSearchParams(location.search).get('page');
 const state = { page: requestedPage || 'overview', workspaces: [], selected: null, detail: null, registry: {}, history: [], historyIndex: -1, lang: requestedLang === 'en' || requestedLang === 'zh' ? requestedLang : (localStorage.getItem('iothunter.lang') || 'zh'), search: '' };
+const initialLayout = ['overview','tasks','findings'].includes(state.page) ? 'layout-queue-content-inspector' : ['workspaces','targets','evidence','devices'].includes(state.page) ? 'layout-content-inspector' : 'layout-content';
+document.querySelector('.workbench')?.classList.add(initialLayout);
 const $ = (id) => document.getElementById(id);
 const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 const api = async (path, options = {}) => { const response = await fetch(API + path, { headers: {'Content-Type':'application/json'}, ...options }); const body = await response.json().catch(() => ({})); if (!response.ok) throw new Error(body.error || response.statusText); return body; };
@@ -81,4 +83,4 @@ $('refresh').addEventListener('click', async ()=>{try{await loadWorkspaces();awa
 $('back').addEventListener('click',()=>{if(state.historyIndex>0){state.historyIndex--;state.page=state.history[state.historyIndex];renderTabs();renderPage();}});
 $('forward').addEventListener('click',()=>{if(state.historyIndex<state.history.length-1){state.historyIndex++;state.page=state.history[state.historyIndex];renderTabs();renderPage();}});
 
-(async()=>{try{localize();await loadWorkspaces();await loadRegistry();recordPage('overview');renderTabs();await renderPage();}catch(error){$('connection').textContent='Start sidecar';document.querySelector('.online-dot').classList.add('offline');$('content').innerHTML=page('Error','IoTHunter is offline',error.message,empty('The local control plane could not be reached.'));localize();}})();
+(async()=>{try{localize();await loadWorkspaces();await loadRegistry();recordPage(state.page);renderTabs();await renderPage();}catch(error){applyLayout();$('connection').textContent='Start sidecar';document.querySelector('.online-dot').classList.add('offline');$('content').innerHTML=page('Error','IoTHunter is offline',error.message,empty('The local control plane could not be reached.'));localize();}})();
