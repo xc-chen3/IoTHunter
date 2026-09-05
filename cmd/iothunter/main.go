@@ -6,11 +6,10 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"net"
 	"net/http"
 	"os"
 	"os/exec"
-	"runtime"
+	"path/filepath"
 	"time"
 
 	core "github.com/iothunter/iothunter/internal/core"
@@ -65,39 +64,23 @@ func serve(args []string) {
 
 func desktop(args []string) {
 	fs := flag.NewFlagSet("desktop", flag.ExitOnError)
-	addr := fs.String("addr", "127.0.0.1:8080", "local listen address")
-	data := storeFrom(fs)
+	apiURL := fs.String("api-url", "", "use an existing control plane instead of starting the local sidecar")
 	_ = fs.Parse(args)
-	e := openEngine(*data)
-	listener, err := net.Listen("tcp", *addr)
+	root, err := os.Getwd()
 	if err != nil {
 		log.Fatal(err)
 	}
-	server := &http.Server{Handler: core.NewAPIServer(e).Handler()}
-	url := "http://" + listener.Addr().String()
-	log.Printf("IoTHunter desktop UI: %s", url)
-	go func() {
-		if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
-			log.Fatal(err)
-		}
-	}()
-	openURL(url)
-	select {}
-}
-
-func openURL(url string) {
-	var command string
-	var args []string
-	switch runtime.GOOS {
-	case "darwin":
-		command, args = "open", []string{url}
-	case "windows":
-		command, args = "rundll32", []string{"url.dll,FileProtocolHandler", url}
-	default:
-		command, args = "xdg-open", []string{url}
+	desktopDir := filepath.Join(root, "desktop")
+	if _, err := os.Stat(filepath.Join(desktopDir, "package.json")); err != nil {
+		log.Fatalf("desktop client not found at %s", desktopDir)
 	}
-	if err := exec.Command(command, args...).Start(); err != nil {
-		log.Printf("could not open browser automatically: %v", err)
+	command := exec.Command("npm", "--prefix", desktopDir, "start")
+	command.Stdout, command.Stderr, command.Stdin = os.Stdout, os.Stderr, os.Stdin
+	if *apiURL != "" {
+		command.Env = append(os.Environ(), "IOTHUNTER_API_URL="+*apiURL)
+	}
+	if err := command.Run(); err != nil {
+		log.Fatal(err)
 	}
 }
 
@@ -171,5 +154,5 @@ func filterFindings(in []core.Finding, id string) []core.Finding {
 	return out
 }
 func usage() {
-	fmt.Fprint(os.Stderr, "IoTHunter\n\nUsage:\n  iothunter desktop [--addr 127.0.0.1:8080] [--data .iothunter/state.json]\n  iothunter serve [--addr :8080] [--data .iothunter/state.json]\n  iothunter demo [--data .iothunter/state.json]\n  iothunter report --workspace W-... [--data .iothunter/state.json]\n  iothunter capabilities\n  iothunter client --server http://127.0.0.1:8080 health|workspaces|run|...\n")
+	fmt.Fprint(os.Stderr, "IoTHunter\n\nUsage:\n  iothunter desktop [--api-url http://127.0.0.1:8080]\n  iothunter serve [--addr :8080] [--data .iothunter/state.json]\n  iothunter demo [--data .iothunter/state.json]\n  iothunter report --workspace W-... [--data .iothunter/state.json]\n  iothunter capabilities\n  iothunter client --server http://127.0.0.1:8080 health|workspaces|run|...\n")
 }

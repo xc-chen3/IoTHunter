@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>IoTHunter</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="window">
+    <aside class="sidebar">
+      <div class="brand"><img src="../../logo.png" alt="IoTHunter"><span class="brand-mark">I</span><span>IoTHunter</span></div>
+      <div class="workspace-switcher"><span class="label">WORKSPACE</span><select id="workspace-select"><option value="">Select workspace</option></select></div>
+      <div class="nav-scroll">
+        <div class="nav-label">Research</div>
+        <nav class="nav">
+          <button data-page="overview"><span class="icon">&#9633;</span>Overview</button>
+          <button data-page="workspaces"><span class="icon">&#9632;</span>Workspaces</button>
+          <button data-page="targets"><span class="icon">&#9670;</span>Targets</button>
+          <button data-page="tasks"><span class="icon">&#9654;</span>Tasks</button>
+          <button data-page="findings"><span class="icon">!</span>Findings</button>
+          <button data-page="evidence"><span class="icon">&#8776;</span>Evidence</button>
+        </nav>
+        <div class="nav-label">Runtime</div>
+        <nav class="nav">
+          <button data-page="agents"><span class="icon">&#9673;</span>Agents</button>
+          <button data-page="capabilities"><span class="icon">&#10022;</span>Capabilities</button>
+          <button data-page="tools"><span class="icon">&#9881;</span>Tools</button>
+          <button data-page="devices"><span class="icon">&#9638;</span>Devices</button>
+        </nav>
+        <div class="nav-label">Knowledge</div>
+        <nav class="nav">
+          <button data-page="skills"><span class="icon">&#10024;</span>Skills</button>
+          <button data-page="knowledge"><span class="icon">&#9776;</span>Knowledge base</button>
+        </nav>
+        <div class="nav-label">Operations</div>
+        <nav class="nav">
+          <button data-page="approvals"><span class="icon">&#10003;</span>Approvals</button>
+          <button data-page="events"><span class="icon">&#8599;</span>Events</button>
+          <button data-page="audit"><span class="icon">&#8801;</span>Audit log</button>
+        </nav>
+      </div>
+      <div class="sidebar-footer"><span class="online-dot"></span><span id="connection">Local control plane</span><span class="version">v0.2.0</span></div>
+    </aside>
+    <main class="main">
+      <header class="topbar">
+        <div class="window-controls"><button id="back" aria-label="Back">&#8249;</button><button id="forward" aria-label="Forward">&#8250;</button></div>
+        <div class="tabs" id="tabs"></div>
+        <button class="refresh" id="refresh" title="Refresh">&#8635;</button>
+      </header>
+      <section class="content" id="content"><div class="loading">Loading IoTHunter...</div></section>
+    </main>
+  </div>
+  <div id="toast" class="toast"></div>
+  <script src="./renderer.js"></script>
+</body>
+</html>

@@ -56,7 +56,7 @@ Python worker:
 
 ## Quick start
 
-Requirements: Go 1.22 or newer. The example Python worker requires Python 3.10 or newer.
+Requirements: Go 1.22 or newer, Node.js 20 or newer, and npm. The example Python worker requires Python 3.10 or newer.
 
 ~~~bash
 go test ./...
@@ -71,16 +71,17 @@ Start the API server:
 go run ./cmd/iothunter serve --addr :8080 --data .iothunter/state.json
 ~~~
 
-## Local UI client
+## Native desktop client
 
-The server and frontend are embedded in the same Go binary. No Node.js, frontend build, or second process is required. Build and launch the local desktop-style client with:
+IoTHunter is distributed as a native Electron desktop client with a local Go control-plane sidecar. It opens a dedicated application window, not a browser page. The client follows the MultiCa-style shell: a persistent workspace sidebar, tabs, back/forward navigation, and independently scrollable research views.
 
 ~~~bash
 make build
-./bin/iothunter desktop --addr 127.0.0.1:8080 --data .iothunter/state.json
+npm --prefix desktop install
+npm --prefix desktop start
 ~~~
 
-The command starts the local control plane and opens `http://127.0.0.1:8080` in the default browser. The UI includes workspace and target intake, research runs, task and finding state, capability and tool registries, and report preview. On a headless machine, open the printed URL manually.
+The desktop process automatically starts `bin/iothunter serve` on a loopback port and stores state in the platform application-data directory. To connect the client to an already running API, use `IOTHUNTER_API_URL` or `./bin/iothunter desktop --api-url http://127.0.0.1:8080`.
 
 The console also exposes the architecture's control-plane objects: Agent pool, Skill workflows, Evidence and Artifact records, Approval queue, Event stream, Audit Log, CapabilityRun, ToolRun, GateDecision, and Knowledge items. Finding Gate actions and Task pause/resume/retry/cancel operations are available from the API and are reflected in the workspace view.
 

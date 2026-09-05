@@ -15,7 +15,7 @@ func NewAPIServer(engine *Engine) *APIServer { return &APIServer{Engine: engine}
 
 func (a *APIServer) Handler() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", a.ui)
+	mux.HandleFunc("/", a.root)
 	mux.HandleFunc("/healthz", a.health)
 	mux.HandleFunc("/api/v1/capabilities", a.capabilities)
 	mux.HandleFunc("/api/v1/capabilities/", a.capabilityRoutes)
@@ -33,6 +33,14 @@ func (a *APIServer) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/approvals/", a.approvalRoutes)
 	mux.HandleFunc("/api/v1/tasks/", a.taskRoutes)
 	return loggingMiddleware(corsMiddleware(mux))
+}
+
+func (a *APIServer) root(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/" {
+		writeError(w, http.StatusNotFound, fmt.Errorf("route not found"))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"service": "iothunter", "api": "/api/v1", "client": "desktop"})
 }
 
 func corsMiddleware(next http.Handler) http.Handler {

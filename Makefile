@@ -1,6 +1,6 @@
 APP := iothunter
 
-.PHONY: test vet fmt build build-all demo serve desktop capabilities
+.PHONY: test vet fmt build build-all demo serve desktop client-install client capabilities
 
 test:
 	go test ./...
@@ -31,6 +31,12 @@ serve:
 
 desktop:
 	go run ./cmd/iothunter desktop
+
+client-install:
+	npm --prefix desktop install
+
+client:
+	npm --prefix desktop start
 
 capabilities:
 	go run ./cmd/iothunter capabilities

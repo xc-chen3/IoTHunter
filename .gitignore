@@ -1,6 +1,7 @@
 .iothunter/
 bin/
 dist/
+desktop/node_modules/
 *.tmp
 *.log
 coverage.out

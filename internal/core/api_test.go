@@ -40,7 +40,7 @@ func TestAPIWorkspaceTargetAndRun(t *testing.T) {
 	}
 }
 
-func TestAPIServesEmbeddedUI(t *testing.T) {
+func TestAPIRootIdentifiesDesktopClient(t *testing.T) {
 	store, _ := NewStore("")
 	server := NewAPIServer(NewEngine(store, 1)).Handler()
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -49,10 +49,10 @@ func TestAPIServesEmbeddedUI(t *testing.T) {
 	if res.Code != http.StatusOK {
 		t.Fatalf("UI status = %d", res.Code)
 	}
-	if got := res.Header().Get("Content-Type"); got != "text/html; charset=utf-8" {
-		t.Fatalf("UI content type = %q", got)
+	if got := res.Header().Get("Content-Type"); got != "application/json" {
+		t.Fatalf("root content type = %q", got)
 	}
-	if !bytes.Contains(res.Body.Bytes(), []byte("<title>IoTHunter</title>")) {
-		t.Fatal("embedded UI title missing")
+	if !bytes.Contains(res.Body.Bytes(), []byte(`"client":"desktop"`)) {
+		t.Fatal("desktop client marker missing")
 	}
 }

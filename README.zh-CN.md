@@ -56,7 +56,7 @@ Python 能力工作进程：
 
 ## 快速开始
 
-要求 Go 1.22 及以上版本。Python 工作进程只需要 Python 3.10 及以上版本。
+要求 Go 1.22 及以上版本、Node.js 20 及以上版本和 npm。Python 工作进程只需要 Python 3.10 及以上版本。
 
 ~~~bash
 go test ./...
@@ -71,20 +71,21 @@ go run ./cmd/iothunter demo --data .iothunter/state.json
 go run ./cmd/iothunter serve --addr :8080 --data .iothunter/state.json
 ~~~
 
-## 本地可视化客户端
+## 原生桌面客户端
 
-服务端和前端页面已经内嵌在同一个 Go 二进制中，不需要 Node.js、前端构建环境或第二个进程。编译并启动本地客户端：
+IoTHunter 使用原生 Electron 桌面客户端，Go 控制平面作为本地 sidecar 进程运行。启动后会打开独立的应用窗口，不会跳转浏览器。客户端参考 MultiCa 的交互模式，提供固定工作区侧栏、标签页、前进后退和独立滚动的研究页面。
 
 ~~~bash
 make build
-./bin/iothunter desktop --addr 127.0.0.1:8080 --data .iothunter/state.json
+npm --prefix desktop install
+npm --prefix desktop start
 ~~~
 
-命令会启动本地控制服务，并尝试在默认浏览器打开 `http://127.0.0.1:8080`。页面包含工作空间和目标录入、研究任务、任务与发现状态、能力和工具列表，以及报告预览。在无桌面环境中，手动打开终端打印的地址即可。
+桌面客户端会自动启动 loopback 地址上的 `bin/iothunter serve`，并将状态文件存储到当前平台的应用数据目录。如果已有 API 服务，可以设置 `IOTHUNTER_API_URL`，或者执行 `./bin/iothunter desktop --api-url http://127.0.0.1:8080` 连接它。
 
 控制台还覆盖架构中的控制面对象：Agent 池、Skill 工作流、Evidence 和 Artifact 记录、Approval 队列、Event 流、Audit Log、CapabilityRun、ToolRun、GateDecision 和 Knowledge。Finding Gate，以及 Task 的暂停、恢复、重试和取消操作，都可以通过接口执行并在工作空间视图中查看。
 
-编译成独立客户端和服务端二进制：
+编译 Go 控制服务和桌面客户端：
 
 ~~~bash
 make build

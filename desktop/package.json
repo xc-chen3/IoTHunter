@@ -1,0 +1,29 @@
+{
+  "name": "iothunter-desktop",
+  "productName": "IoTHunter",
+  "version": "0.2.0",
+  "private": true,
+  "description": "IoTHunter native desktop client",
+  "author": "IoTHunter contributors",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron . --no-sandbox",
+    "dev": "electron . --no-sandbox",
+    "package": "electron-builder --dir",
+    "dist": "electron-builder"
+  },
+  "devDependencies": {
+    "electron": "^39.2.6",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.iothunter.desktop",
+    "productName": "IoTHunter",
+    "files": ["main.cjs", "preload.cjs", "renderer/**/*"],
+    "extraResources": [{ "from": "../bin/iothunter", "to": "iothunter" }, { "from": "../logo.png", "to": "logo.png" }],
+    "directories": { "output": "dist" },
+    "linux": { "target": ["AppImage", "deb"], "category": "Development" },
+    "mac": { "target": ["dmg"] },
+    "win": { "target": ["nsis"] }
+  }
+}
