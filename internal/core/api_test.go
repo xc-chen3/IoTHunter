@@ -115,3 +115,41 @@ func TestAPIIoTSummaryProjection(t *testing.T) {
 		t.Fatalf("targets = %d, want 1", summary["targets"])
 	}
 }
+
+func TestAPIDeviceConfigurationUpdate(t *testing.T) {
+	store, _ := NewStore("")
+	engine := NewEngine(store, 1)
+	workspace, err := engine.CreateWorkspace("device-config", "test", "peripheral configuration")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := NewAPIServer(engine).Handler()
+	request := func(method, path string, body any) *httptest.ResponseRecorder {
+		var payload bytes.Buffer
+		if body != nil {
+			_ = json.NewEncoder(&payload).Encode(body)
+		}
+		req := httptest.NewRequest(method, path, &payload)
+		req.Header.Set("Content-Type", "application/json")
+		res := httptest.NewRecorder()
+		server.ServeHTTP(res, req)
+		return res
+	}
+	res := request(http.MethodPost, "/api/v1/workspaces/"+workspace.ID+"/devices", Device{Vendor: "RIGOL", Model: "DP832", Transport: "USB"})
+	if res.Code != http.StatusCreated {
+		t.Fatalf("create device status = %d", res.Code)
+	}
+	var device Device
+	if err := json.NewDecoder(res.Body).Decode(&device); err != nil {
+		t.Fatal(err)
+	}
+	res = request(http.MethodPost, "/api/v1/workspaces/"+workspace.ID+"/devices/"+device.ID, map[string]any{"status": "connected", "config": map[string]any{"voltage_limit": "5.00"}})
+	if res.Code != http.StatusOK {
+		t.Fatalf("update device status = %d", res.Code)
+	}
+	var updated Device
+	_ = json.NewDecoder(res.Body).Decode(&updated)
+	if updated.Status != "connected" || updated.Config["voltage_limit"] != "5.00" {
+		t.Fatalf("device update not persisted: %+v", updated)
+	}
+}

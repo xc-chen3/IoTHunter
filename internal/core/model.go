@@ -145,16 +145,17 @@ type GateDecision struct {
 }
 
 type Device struct {
-	ID          string `json:"id"`
-	WorkspaceID string `json:"workspace_id"`
-	Vendor      string `json:"vendor,omitempty"`
-	Model       string `json:"model,omitempty"`
-	Serial      string `json:"serial,omitempty"`
-	Transport   string `json:"transport,omitempty"`
-	Status      string `json:"status"`
-	Authorized  bool   `json:"authorized"`
-	Owner       string `json:"owner,omitempty"`
-	LockOwner   string `json:"lock_owner,omitempty"`
+	ID          string         `json:"id"`
+	WorkspaceID string         `json:"workspace_id"`
+	Vendor      string         `json:"vendor,omitempty"`
+	Model       string         `json:"model,omitempty"`
+	Serial      string         `json:"serial,omitempty"`
+	Transport   string         `json:"transport,omitempty"`
+	Status      string         `json:"status"`
+	Authorized  bool           `json:"authorized"`
+	Owner       string         `json:"owner,omitempty"`
+	LockOwner   string         `json:"lock_owner,omitempty"`
+	Config      map[string]any `json:"config,omitempty"`
 }
 
 type PermissionSet struct {

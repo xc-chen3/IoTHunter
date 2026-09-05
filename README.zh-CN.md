@@ -83,7 +83,7 @@ npm --prefix desktop start
 
 桌面客户端会自动启动 loopback 地址上的 `bin/iothunter serve`，并将状态文件存储到当前平台的应用数据目录。如果已有 API 服务，可以设置 `IOTHUNTER_API_URL`，或者执行 `./bin/iothunter desktop --api-url http://127.0.0.1:8080` 连接它。
 
-桌面侧边栏按照 IoT 研究流程组织为：工作台（对话与任务、目标管理、设备管理、文件与样本）、AI 智能体、外设管理、漏洞管理、知识库和系统管理。不同功能会使用不同栏数：任务对话使用任务列表、主画布和详情检查器；设备与漏洞使用主画布和检查器；注册表使用单一主画布。
+桌面侧边栏按照参考图的 IoT 研究流程组织为：工作台（对话与任务、任务中心、设备管理、智能体管理、分析与验证）、外设管理、漏洞管理和配置（运行时、Skills、设置）。不同功能会使用不同栏数：任务对话使用任务列表、主画布和详情检查器；智能体管理和外设配置使用内部三栏工作区；注册表使用单一主画布。
 
 控制台还覆盖架构中的控制面对象：Agent 池、Skill 工作流、Evidence 和 Artifact 记录、Approval 队列、Event 流、Audit Log、CapabilityRun、ToolRun、GateDecision 和 Knowledge。Finding Gate，以及 Task 的暂停、恢复、重试和取消操作，都可以通过接口执行并在工作空间视图中查看。
 

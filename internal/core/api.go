@@ -401,6 +401,54 @@ func (a *APIServer) workspaceRoutes(w http.ResponseWriter, r *http.Request) {
 		a.devices(w, r, id)
 		return
 	}
+	if len(parts) == 3 && parts[1] == "devices" && r.Method == http.MethodPost {
+		deviceID := parts[2]
+		var patch struct {
+			Status    string         `json:"status"`
+			Transport string         `json:"transport"`
+			Serial    string         `json:"serial"`
+			Config    map[string]any `json:"config"`
+		}
+		if err := decode(r, &patch); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		var updated Device
+		found := false
+		if err := a.Engine.Store.mutate(func(st *State) error {
+			for i := range st.Devices {
+				if st.Devices[i].ID != deviceID || st.Devices[i].WorkspaceID != id {
+					continue
+				}
+				if patch.Status != "" {
+					st.Devices[i].Status = patch.Status
+				}
+				if patch.Transport != "" {
+					st.Devices[i].Transport = patch.Transport
+				}
+				if patch.Serial != "" {
+					st.Devices[i].Serial = patch.Serial
+				}
+				if patch.Config != nil {
+					st.Devices[i].Config = patch.Config
+				}
+				updated = st.Devices[i]
+				found = true
+				return nil
+			}
+			return nil
+		}); err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		if !found {
+			writeError(w, http.StatusNotFound, fmt.Errorf("device not found"))
+			return
+		}
+		_ = a.Engine.audit("device.updated", "api", "device", deviceID, map[string]any{"workspace_id": id})
+		writeJSON(w, http.StatusOK, updated)
+		return
+	}
 	if len(parts) == 2 && parts[1] == "run" && r.Method == http.MethodPost {
 		var in struct {
 			TargetID string `json:"target_id"`
