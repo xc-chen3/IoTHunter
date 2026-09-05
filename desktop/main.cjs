@@ -61,8 +61,8 @@ async function createWindow() {
   const window = new BrowserWindow({
     width: 1380,
     height: 860,
-    minWidth: 980,
-    minHeight: 640,
+    minWidth: 760,
+    minHeight: 560,
     backgroundColor: '#f7f9fc',
     icon,
     title: 'IoTHunter',
