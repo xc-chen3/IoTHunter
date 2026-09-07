@@ -153,3 +153,49 @@ func TestAPIDeviceConfigurationUpdate(t *testing.T) {
 		t.Fatalf("device update not persisted: %+v", updated)
 	}
 }
+
+func TestAPIConversationAndPeripheralBoundaries(t *testing.T) {
+	store, _ := NewStore("")
+	engine := NewEngine(store, 1)
+	workspace, err := engine.CreateWorkspace("boundaries", "test", "conversation and peripheral records")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := NewAPIServer(engine).Handler()
+	request := func(method, path string, body any) *httptest.ResponseRecorder {
+		var payload bytes.Buffer
+		if body != nil {
+			_ = json.NewEncoder(&payload).Encode(body)
+		}
+		req := httptest.NewRequest(method, path, &payload)
+		req.Header.Set("Content-Type", "application/json")
+		res := httptest.NewRecorder()
+		server.ServeHTTP(res, req)
+		return res
+	}
+	res := request(http.MethodPost, "/api/v1/workspaces/"+workspace.ID+"/conversations", map[string]string{"title": "UART review", "content": "inspect boot"})
+	if res.Code != http.StatusCreated {
+		t.Fatalf("conversation status = %d", res.Code)
+	}
+	res = request(http.MethodPost, "/api/v1/workspaces/"+workspace.ID+"/peripherals", Peripheral{Name: "UART 01", Kind: "serial", Driver: "pyserial", Port: "/dev/ttyUSB0"})
+	if res.Code != http.StatusCreated {
+		t.Fatalf("peripheral status = %d", res.Code)
+	}
+	var peripheral Peripheral
+	if err := json.NewDecoder(res.Body).Decode(&peripheral); err != nil {
+		t.Fatal(err)
+	}
+	res = request(http.MethodPost, "/api/v1/peripherals/"+peripheral.ID, map[string]any{"status": "connected", "occupied_by": "test"})
+	if res.Code != http.StatusOK {
+		t.Fatalf("peripheral update status = %d", res.Code)
+	}
+	var updated Peripheral
+	_ = json.NewDecoder(res.Body).Decode(&updated)
+	if updated.Status != "connected" || updated.OccupiedBy != "test" {
+		t.Fatalf("peripheral update not persisted: %+v", updated)
+	}
+	res = request(http.MethodGet, "/api/v1/workspaces/"+workspace.ID, nil)
+	if res.Code != http.StatusOK || !bytes.Contains(res.Body.Bytes(), []byte(`"conversations"`)) || !bytes.Contains(res.Body.Bytes(), []byte(`"peripherals"`)) {
+		t.Fatalf("aggregate boundary fields missing: %s", res.Body.String())
+	}
+}

@@ -91,6 +91,43 @@ func (s *Store) CreateTarget(t Target) error {
 func (s *Store) CreateDevice(d Device) error {
 	return s.mutate(func(st *State) error { st.Devices = append(st.Devices, d); return nil })
 }
+func (s *Store) CreatePeripheral(p Peripheral) error {
+	return s.mutate(func(st *State) error { st.Peripherals = append(st.Peripherals, p); return nil })
+}
+func (s *Store) UpdatePeripheral(id string, fn func(*Peripheral) error) error {
+	return s.mutate(func(st *State) error {
+		for i := range st.Peripherals {
+			if st.Peripherals[i].ID == id {
+				if err := fn(&st.Peripherals[i]); err != nil {
+					return err
+				}
+				st.Peripherals[i].UpdatedAt = now()
+				return nil
+			}
+		}
+		return fmt.Errorf("peripheral %s not found", id)
+	})
+}
+func (s *Store) CreateConversation(c Conversation) error {
+	return s.mutate(func(st *State) error { st.Conversations = append(st.Conversations, c); return nil })
+}
+func (s *Store) UpdateConversation(id string, fn func(*Conversation) error) error {
+	return s.mutate(func(st *State) error {
+		for i := range st.Conversations {
+			if st.Conversations[i].ID == id {
+				if err := fn(&st.Conversations[i]); err != nil {
+					return err
+				}
+				st.Conversations[i].UpdatedAt = now()
+				return nil
+			}
+		}
+		return fmt.Errorf("conversation %s not found", id)
+	})
+}
+func (s *Store) AddCapture(c ProtocolCapture) error {
+	return s.mutate(func(st *State) error { st.Captures = append(st.Captures, c); return nil })
+}
 func (s *Store) CreateTask(t Task) error {
 	return s.mutate(func(st *State) error { st.Tasks = append(st.Tasks, t); return nil })
 }

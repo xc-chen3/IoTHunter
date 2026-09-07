@@ -26,6 +26,10 @@ func (a *APIServer) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/runtimes/", a.runtimeRoutes)
 	mux.HandleFunc("/api/v1/skills", a.skills)
 	mux.HandleFunc("/api/v1/knowledge", a.knowledge)
+	mux.HandleFunc("/api/v1/conversations", a.conversations)
+	mux.HandleFunc("/api/v1/conversations/", a.conversationRoutes)
+	mux.HandleFunc("/api/v1/peripherals", a.peripherals)
+	mux.HandleFunc("/api/v1/peripherals/", a.peripheralRoutes)
 	mux.HandleFunc("/api/v1/events", a.events)
 	mux.HandleFunc("/api/v1/audit", a.audit)
 	mux.HandleFunc("/api/v1/workspaces", a.workspaces)
@@ -280,6 +284,222 @@ func (a *APIServer) knowledge(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, item)
 }
 
+func (a *APIServer) conversations(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		workspaceID := r.URL.Query().Get("workspace_id")
+		items := a.Engine.Store.Snapshot().Conversations
+		if workspaceID != "" {
+			filtered := make([]Conversation, 0, len(items))
+			for _, item := range items {
+				if item.WorkspaceID == workspaceID {
+					filtered = append(filtered, item)
+				}
+			}
+			items = filtered
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"conversations": items})
+		return
+	}
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, fmt.Errorf("method not allowed"))
+		return
+	}
+	var in struct {
+		WorkspaceID string `json:"workspace_id"`
+		Title       string `json:"title"`
+		Content     string `json:"content"`
+	}
+	if err := decode(r, &in); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if strings.TrimSpace(in.WorkspaceID) == "" {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("workspace_id is required"))
+		return
+	}
+	if _, ok := a.Engine.Store.Workspace(in.WorkspaceID); !ok {
+		writeError(w, http.StatusNotFound, fmt.Errorf("workspace not found"))
+		return
+	}
+	title := strings.TrimSpace(in.Title)
+	if title == "" {
+		title = "New IoT research conversation"
+	}
+	c := Conversation{ID: NewID("CONV"), WorkspaceID: in.WorkspaceID, Title: title, Status: "active", CreatedAt: now(), UpdatedAt: now()}
+	if strings.TrimSpace(in.Content) != "" {
+		c.Messages = append(c.Messages, ConversationMessage{ID: NewID("MSG"), Role: "user", Content: in.Content, CreatedAt: now()})
+	}
+	if err := a.Engine.Store.CreateConversation(c); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	_ = a.Engine.audit("conversation.created", "api", "conversation", c.ID, map[string]any{"workspace_id": c.WorkspaceID})
+	writeJSON(w, http.StatusCreated, c)
+}
+
+func (a *APIServer) conversationRoutes(w http.ResponseWriter, r *http.Request) {
+	parts := pathParts(r.URL.Path, "/api/v1/conversations/")
+	if len(parts) != 1 {
+		writeError(w, http.StatusNotFound, fmt.Errorf("conversation route not found"))
+		return
+	}
+	items := a.Engine.Store.Snapshot().Conversations
+	var current *Conversation
+	for i := range items {
+		if items[i].ID == parts[0] {
+			copy := items[i]
+			current = &copy
+			break
+		}
+	}
+	if current == nil {
+		writeError(w, http.StatusNotFound, fmt.Errorf("conversation not found"))
+		return
+	}
+	if r.Method == http.MethodGet {
+		writeJSON(w, http.StatusOK, current)
+		return
+	}
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, fmt.Errorf("method not allowed"))
+		return
+	}
+	var in struct {
+		Title      *string             `json:"title"`
+		Status     *string             `json:"status"`
+		Content    string              `json:"content"`
+		Role       string              `json:"role"`
+		References map[string][]string `json:"references"`
+	}
+	if err := decode(r, &in); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := a.Engine.Store.UpdateConversation(current.ID, func(c *Conversation) error {
+		if in.Title != nil && strings.TrimSpace(*in.Title) != "" {
+			c.Title = strings.TrimSpace(*in.Title)
+		}
+		if in.Status != nil {
+			c.Status = strings.TrimSpace(*in.Status)
+		}
+		if strings.TrimSpace(in.Content) != "" {
+			role := in.Role
+			if role == "" {
+				role = "user"
+			}
+			c.Messages = append(c.Messages, ConversationMessage{ID: NewID("MSG"), Role: role, Content: in.Content, References: in.References, CreatedAt: now()})
+		}
+		return nil
+	}); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	updated := a.Engine.Store.Snapshot().Conversations
+	for _, c := range updated {
+		if c.ID == current.ID {
+			writeJSON(w, http.StatusOK, c)
+			return
+		}
+	}
+}
+
+func (a *APIServer) peripherals(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		workspaceID := r.URL.Query().Get("workspace_id")
+		items := a.Engine.Store.Snapshot().Peripherals
+		if workspaceID != "" {
+			items = filterPeripherals(items, workspaceID)
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"peripherals": items})
+		return
+	}
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, fmt.Errorf("method not allowed"))
+		return
+	}
+	var p Peripheral
+	if err := decode(r, &p); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if strings.TrimSpace(p.WorkspaceID) == "" || strings.TrimSpace(p.Name) == "" || strings.TrimSpace(p.Kind) == "" {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("workspace_id, name, and kind are required"))
+		return
+	}
+	if _, ok := a.Engine.Store.Workspace(p.WorkspaceID); !ok {
+		writeError(w, http.StatusNotFound, fmt.Errorf("workspace not found"))
+		return
+	}
+	p.ID, p.Status, p.UpdatedAt = NewID("PER"), "offline", now()
+	if p.Config == nil {
+		p.Config = map[string]any{}
+	}
+	if p.SafetyLimits == nil {
+		p.SafetyLimits = map[string]any{}
+	}
+	if err := a.Engine.Store.CreatePeripheral(p); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	_ = a.Engine.audit("peripheral.created", "api", "peripheral", p.ID, map[string]any{"workspace_id": p.WorkspaceID})
+	writeJSON(w, http.StatusCreated, p)
+}
+
+func (a *APIServer) peripheralRoutes(w http.ResponseWriter, r *http.Request) {
+	parts := pathParts(r.URL.Path, "/api/v1/peripherals/")
+	if len(parts) != 1 {
+		writeError(w, http.StatusNotFound, fmt.Errorf("peripheral route not found"))
+		return
+	}
+	p, ok := findPeripheral(a.Engine.Store.Snapshot().Peripherals, parts[0])
+	if !ok {
+		writeError(w, http.StatusNotFound, fmt.Errorf("peripheral not found"))
+		return
+	}
+	if r.Method == http.MethodGet {
+		writeJSON(w, http.StatusOK, p)
+		return
+	}
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, fmt.Errorf("method not allowed"))
+		return
+	}
+	var patch struct {
+		Status       *string        `json:"status"`
+		OccupiedBy   *string        `json:"occupied_by"`
+		Config       map[string]any `json:"config"`
+		SafetyLimits map[string]any `json:"safety_limits"`
+	}
+	if err := decode(r, &patch); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := a.Engine.Store.UpdatePeripheral(p.ID, func(v *Peripheral) error {
+		if patch.Status != nil {
+			v.Status = strings.TrimSpace(*patch.Status)
+			if v.Status == "connected" {
+				v.ConnectedAt = timePtr(now())
+			}
+		}
+		if patch.OccupiedBy != nil {
+			v.OccupiedBy = strings.TrimSpace(*patch.OccupiedBy)
+		}
+		if patch.Config != nil {
+			v.Config = patch.Config
+		}
+		if patch.SafetyLimits != nil {
+			v.SafetyLimits = patch.SafetyLimits
+		}
+		return nil
+	}); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	updated, _ := findPeripheral(a.Engine.Store.Snapshot().Peripherals, p.ID)
+	_ = a.Engine.audit("peripheral.updated", "api", "peripheral", p.ID, nil)
+	writeJSON(w, http.StatusOK, updated)
+}
+
 func (a *APIServer) events(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, fmt.Errorf("method not allowed"))
@@ -312,15 +532,17 @@ func (a *APIServer) iotRoutes(w http.ResponseWriter, r *http.Request) {
 				activeTasks++
 			}
 		}
-		connectedDevices := 0
-		for _, device := range st.Devices {
-			if device.Status == "connected" || device.Status == "available" {
-				connectedDevices++
+		connectedPeripherals := 0
+		for _, peripheral := range st.Peripherals {
+			if peripheral.Status == "connected" {
+				connectedPeripherals++
 			}
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"targets": len(st.Targets), "devices": len(st.Devices), "connected_devices": connectedDevices, "active_tasks": activeTasks, "findings": len(st.Findings), "artifacts": len(st.Artifacts), "evidence": len(st.Evidence)})
+		writeJSON(w, http.StatusOK, map[string]any{"targets": len(st.Targets), "devices": len(st.Targets), "peripherals": len(st.Peripherals), "connected_devices": connectedPeripherals, "connected_peripherals": connectedPeripherals, "active_tasks": activeTasks, "findings": len(st.Findings), "artifacts": len(st.Artifacts), "evidence": len(st.Evidence)})
 	case "/api/v1/iot/devices":
-		writeJSON(w, http.StatusOK, map[string]any{"devices": st.Devices})
+		writeJSON(w, http.StatusOK, map[string]any{"devices": st.Targets})
+	case "/api/v1/iot/peripherals":
+		writeJSON(w, http.StatusOK, map[string]any{"peripherals": st.Peripherals})
 	case "/api/v1/iot/vulnerabilities":
 		writeJSON(w, http.StatusOK, map[string]any{"vulnerabilities": st.Findings})
 	case "/api/v1/iot/artifacts":
@@ -384,6 +606,8 @@ func (a *APIServer) workspaceRoutes(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{
 			"workspace": mustWorkspace(a.Engine.Store, id),
 			"targets":   filterTargets(st.Targets, id), "devices": filterDevices(st.Devices, id),
+			"peripherals": filterPeripherals(st.Peripherals, id), "attachments": filterAttachments(st.Attachments, id),
+			"conversations": filterConversations(st.Conversations, id), "captures": filterCaptures(st.Captures, id),
 			"tasks": filterTasks(st.Tasks, id), "findings": filterFindings(st.Findings, id),
 			"evidence": filterEvidence(st.Evidence, filterFindings(st.Findings, id)), "artifacts": st.Artifacts,
 			"approvals": filterApprovals(st.Approvals, filterTasks(st.Tasks, id)),
@@ -399,6 +623,72 @@ func (a *APIServer) workspaceRoutes(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(parts) == 2 && parts[1] == "devices" {
 		a.devices(w, r, id)
+		return
+	}
+	if len(parts) == 2 && parts[1] == "peripherals" {
+		if r.Method == http.MethodGet {
+			writeJSON(w, http.StatusOK, map[string]any{"peripherals": filterPeripherals(a.Engine.Store.Snapshot().Peripherals, id)})
+			return
+		}
+		if r.Method != http.MethodPost {
+			writeError(w, http.StatusMethodNotAllowed, fmt.Errorf("method not allowed"))
+			return
+		}
+		var p Peripheral
+		if err := decode(r, &p); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		p.WorkspaceID = id
+		if strings.TrimSpace(p.Name) == "" || strings.TrimSpace(p.Kind) == "" {
+			writeError(w, http.StatusBadRequest, fmt.Errorf("name and kind are required"))
+			return
+		}
+		p.ID, p.Status, p.UpdatedAt = NewID("PER"), "offline", now()
+		if p.Config == nil {
+			p.Config = map[string]any{}
+		}
+		if p.SafetyLimits == nil {
+			p.SafetyLimits = map[string]any{}
+		}
+		if err := a.Engine.Store.CreatePeripheral(p); err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		_ = a.Engine.audit("peripheral.created", "api", "peripheral", p.ID, map[string]any{"workspace_id": id})
+		writeJSON(w, http.StatusCreated, p)
+		return
+	}
+	if len(parts) == 2 && parts[1] == "conversations" {
+		if r.Method == http.MethodGet {
+			writeJSON(w, http.StatusOK, map[string]any{"conversations": filterConversations(a.Engine.Store.Snapshot().Conversations, id)})
+			return
+		}
+		if r.Method != http.MethodPost {
+			writeError(w, http.StatusMethodNotAllowed, fmt.Errorf("method not allowed"))
+			return
+		}
+		var in struct {
+			Title   string `json:"title"`
+			Content string `json:"content"`
+		}
+		if err := decode(r, &in); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		title := strings.TrimSpace(in.Title)
+		if title == "" {
+			title = "New IoT research conversation"
+		}
+		c := Conversation{ID: NewID("CONV"), WorkspaceID: id, Title: title, Status: "active", CreatedAt: now(), UpdatedAt: now()}
+		if strings.TrimSpace(in.Content) != "" {
+			c.Messages = []ConversationMessage{{ID: NewID("MSG"), Role: "user", Content: in.Content, CreatedAt: now()}}
+		}
+		if err := a.Engine.Store.CreateConversation(c); err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		writeJSON(w, http.StatusCreated, c)
 		return
 	}
 	if len(parts) == 3 && parts[1] == "devices" && r.Method == http.MethodPost {
@@ -824,6 +1114,50 @@ func filterDevices(in []Device, id string) []Device {
 		}
 	}
 	return out
+}
+func filterPeripherals(in []Peripheral, id string) []Peripheral {
+	out := []Peripheral{}
+	for _, v := range in {
+		if v.WorkspaceID == id {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+func filterAttachments(in []DeviceAttachment, id string) []DeviceAttachment {
+	out := []DeviceAttachment{}
+	for _, v := range in {
+		if v.WorkspaceID == id {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+func filterConversations(in []Conversation, id string) []Conversation {
+	out := []Conversation{}
+	for _, v := range in {
+		if v.WorkspaceID == id {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+func filterCaptures(in []ProtocolCapture, id string) []ProtocolCapture {
+	out := []ProtocolCapture{}
+	for _, v := range in {
+		if v.WorkspaceID == id {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+func findPeripheral(in []Peripheral, id string) (Peripheral, bool) {
+	for _, v := range in {
+		if v.ID == id {
+			return v, true
+		}
+	}
+	return Peripheral{}, false
 }
 func filterKnowledge(in []KnowledgeItem, id string) []KnowledgeItem {
 	out := []KnowledgeItem{}

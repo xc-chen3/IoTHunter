@@ -1,10 +1,10 @@
-# IoTHunter 架构设计文档
+# IoTHunter Harness 架构设计文档
 
-> 文档版本：v2.0  
+> 文档版本：v2.1  
 > 项目名称：IoTHunter  
-> 系统定位：Capability-Isolated Multi-Agent IoT Vulnerability Research Harness  
+> 系统定位：Capability-Isolated Multi-Agent IoT Vulnerability Research Harness + Local Peripheral Orchestration  
 > 目标读者：架构师、后端工程师、Agent 工程师、安全研究员、AI Coding Agent  
-> 文档用途：作为 IoTHunter 的总体架构、核心领域模型、工程边界与开发实施依据
+> 文档用途：作为 IoTHunter Harness 的总体架构、核心领域模型、工程边界与开发实施依据
 
 ---
 
@@ -121,7 +121,7 @@ binwalk / unblob / custom extractor
 
 ## 2.3 Control Plane / Execution Plane Separation
 
-Go 负责 IoTHunter 核心与调度控制。
+Go 负责 Harness 核心与调度控制。
 
 Python 负责安全分析与专业能力实现。
 
@@ -202,130 +202,280 @@ Resource
 
 # 3. 总体架构
 
-```plantuml
-@startuml IoTHunter_Overall_Architecture_v2
+v2.1 在原有“能力隔离”基础上增加 **Desktop Client Runtime + Peripheral Plane**。
 
+关键变化：
+
+```text
+AI Agent 不直接操作串口、程控电源、示波器、J-Link 或蓝牙分析仪。
+
+Agent
+  ↓
+Capability
+  ↓
+Peripheral Capability / Tool Capability
+  ↓
+Permission + Safety Policy
+  ↓
+Peripheral Manager / Tool Gateway
+  ↓
+Driver Adapter
+  ↓
+Physical Peripheral
+```
+
+总体架构：
+
+```plantuml
+@startuml IoTHunter_Overall_Architecture_v21
 skinparam backgroundColor #FEFEFE
 skinparam defaultFontName "Microsoft YaHei"
 skinparam defaultFontSize 13
 skinparam shadowing false
 
-title IoTHunter — Capability-Isolated Multi-Agent Vulnerability Research Harness
+title IoTHunter v2.1 - Multi-Agent + Capability Isolation + Peripheral Orchestration
 
-rectangle "Web / API Layer\n\nNext.js / TypeScript\nREST / SSE / WebSocket" as UI #F8FAFC
+rectangle "Desktop Client\nWails Desktop Shell\nReact / TypeScript\nLocal Workspace UI\nConversation / Task\nPeripheral Management" as DESKTOP #F8FAFC
 
-rectangle "Control Plane — Go\n\nCommander\nPlanner / Scheduler\nTask Engine / Event Bus\nPriority / Budget\nFinding State Machine\nGate / Recovery\nPermission / Approval\nAudit / SITREP / Report" as CP #DBEAFE
+rectangle "Control Plane - Go\nCommander\nPlanner / Scheduler\nTask Engine / Event Bus\nPriority / Budget\nFinding State Machine\nGate / Recovery\nPermission / Approval\nAudit / SITREP / Report" as CP #DBEAFE
 
 package "Agent Plane" {
-    rectangle "Recon Agent Pool\n\n理解目标\n选择情报能力\n评估结果\n更新Finding" as RECON #FFEDD5
-    rectangle "Analysis Agent Pool\n\n选择分析能力\n组合Evidence\n提出下一步任务" as ANALYSIS #DCFCE7
-    rectangle "Validation Agent Pool\n\n对抗复核\n选择验证能力\n评估复现结果" as VALIDATE #FCE7F3
+  rectangle "Recon Agent" as RECON #FFEDD5
+  rectangle "Analysis Agent" as ANALYSIS #DCFCE7
+  rectangle "Validation Agent" as VALIDATE #FCE7F3
 }
 
-package "Capability Plane" {
-    rectangle "Firmware\nBinary\nTaint\nProtocol\nWeb / API\nCloud / App\nFuzzing\nEmulation\nDevice\nPacket\nKnowledge" as CAP #EDE9FE
+rectangle "Capability Registry\nCapability ID / Version\nSchema / Permission\nRuntime / Implementation" as CREG #EDE9FE
+
+package "Capability Plane - Python / Go" {
+  rectangle "Security Capabilities\nFirmware / Binary / Taint\nProtocol / Web / Cloud\nFuzz / Emulation\nKnowledge" as SCAP #EDE9FE
+  rectangle "Peripheral Capabilities\nserial.* / power.*\nscope.* / jlink.*\nbluetooth.* / usb.*\npacket.*" as PCAP #E0E7FF
 }
 
-rectangle "Capability Registry\n\nID / Version\nInput Schema\nOutput Schema\nPermissions\nRuntime\nImplementations" as REG #E0E7FF
+package "Execution Plane" {
+  rectangle "Tool Gateway\nSandbox / Container\nRemote Worker" as TG #FEF3C7
+  rectangle "Peripheral Manager - Go\nDiscovery / Registry\nSession / Lease\nConfig / Preset\nCommand Broker\nTelemetry\nSafety Guard" as PM #DBEAFE
+}
 
-rectangle "Execution Plane\n\nTool Gateway\nPermission Check\nSandbox / Container / VM\nDevice Manager\nRemote Worker" as EXEC #FEF3C7
+package "Peripheral Plane" {
+  rectangle "Driver Adapters\nSerial / USB\nSCPI / VISA\nJ-Link / SWD\nBluetooth Analyzer\nOscilloscope\nLogic Analyzer\nNetwork Capture" as DRIVER #D1FAE5
+  rectangle "Physical Peripherals\nUART Adapter\nProgrammable Power Supply\nOscilloscope\nJ-Link\nUbertooth / BLE Analyzer\nProtocol Expansion Board" as HW #ECFDF5
+}
 
-database "Data Plane\n\nFinding Store\nEvidence Store\nTask Store\nArtifact Store\nEvent Store\nAudit Log" as DATA #E0F2FE
+database "Data Plane\nFinding / Evidence\nTask / Artifact\nPeripheral Config\nTelemetry / Event\nAudit Log" as DATA #E0F2FE
+database "Knowledge & Skill Plane\nVendor Profiles\nHistorical Vulns\nProtocol Patterns\nPeripheral Presets\nValidation Strategies\nWorkspace Skills" as KNOW #D1FAE5
 
-database "Knowledge & Skill Plane\n\nVendor Profiles\nHistorical Vulns\nDangerous APIs\nProtocol Patterns\nValidation Strategies\nSeeds / Harness\nWorkspace Skills" as KNOW #D1FAE5
-
-rectangle "Outputs\n\nvalidated_vulns.json\nreport.md\nSITREP\nVendor Profile\nWorkspace Skills" as OUT #FFF7ED
-
-UI --> CP
-
+DESKTOP --> CP : local IPC
 CP --> RECON
 CP --> ANALYSIS
 CP --> VALIDATE
-
-RECON --> CAP : Capability Request
-ANALYSIS --> CAP : Capability Request
-VALIDATE --> CAP : Capability Request
-
-CAP --> REG
-REG --> EXEC
-
-EXEC --> DATA : Evidence / Artifact / Result
-
-DATA --> CP : Finding / Event / State
-CP --> OUT
-
-OUT --> KNOW
-DATA --> KNOW
-
+RECON --> CREG
+ANALYSIS --> CREG
+VALIDATE --> CREG
+CREG --> SCAP
+CREG --> PCAP
+SCAP --> TG
+PCAP --> PM
+PM --> DRIVER
+DRIVER --> HW
+TG --> DATA : Artifact / Evidence
+PM --> DATA : Telemetry / Evidence
+DATA --> CP : Event / State
 KNOW --> CP
-KNOW --> RECON
-KNOW --> ANALYSIS
-KNOW --> VALIDATE
-
+KNOW --> CREG
+DATA --> KNOW
 @enduml
 ```
 
----
+最重要的边界：
+
+```text
+Control Plane     = 决策、调度、权限
+Agent Plane       = 思考、选择能力、评估结果
+Capability Plane  = 标准化专业能力
+Execution Plane   = 安全执行与设备编排
+Peripheral Plane  = 外设抽象、驱动和物理连接
+Data Plane        = 事实与状态
+Knowledge Plane   = 可复用经验
+```
 
 # 4. 系统分层
 
-IoTHunter v2 建议划分为七个逻辑平面。
+IoTHunter v2.1 划分为八个逻辑平面：
 
 ```text
-┌──────────────────────────────────────┐
-│              Web / API              │
-├──────────────────────────────────────┤
-│            Control Plane            │
-├──────────────────────────────────────┤
-│             Agent Plane             │
-├──────────────────────────────────────┤
-│          Capability Plane           │
-├──────────────────────────────────────┤
-│           Execution Plane           │
-├──────────────────────────────────────┤
-│              Data Plane             │
-├──────────────────────────────────────┤
-│       Knowledge & Skill Plane       │
-└──────────────────────────────────────┘
+┌────────────────────────────────────────────┐
+│ Desktop Client / UI                        │
+│ Wails + React + TypeScript                 │
+├────────────────────────────────────────────┤
+│ Control Plane — Go                         │
+├────────────────────────────────────────────┤
+│ Agent Plane                                │
+├────────────────────────────────────────────┤
+│ Capability Plane                           │
+├────────────────────────────────────────────┤
+│ Execution Plane                            │
+├────────────────────────────────────────────┤
+│ Peripheral Plane                           │
+├────────────────────────────────────────────┤
+│ Data Plane                                 │
+├────────────────────────────────────────────┤
+│ Knowledge & Skill Plane                    │
+└────────────────────────────────────────────┘
 ```
 
----
+其中 Peripheral Plane 是 v2.1 的一级模块，不能仅作为普通 Tool 的一个分支。
 
-# 5. Web / API Layer
+原因：
 
-推荐技术：
+- 外设具有真实连接状态；
+- 一个设备通常需要排他锁；
+- 参数配置具有设备级约束；
+- 部分操作具有物理风险；
+- 外设会持续产生 Telemetry；
+- Agent、UI 和自动化流程可能同时需要访问设备；
+- 串口、SCPI、SWD、BLE 等通信模型差异较大。
+
+因此需要统一的 **Peripheral Manager** 管理生命周期，而不是让 Agent 或脚本直接打开 `/dev/ttyUSB0`、VISA Resource、USB Device 或 J-Link。
+
+# 5. Desktop Client Layer
+
+IoTHunter 是本地安全研究客户端，不以浏览器 Web SaaS 作为主要产品形态。
+
+推荐：
 
 ```text
+Wails
++
+Go
++
+React
++
 TypeScript
-React / Next.js
-REST API
-SSE / WebSocket
 ```
 
-主要能力：
+原因：
+
+- Harness Core 已采用 Go；
+- Wails 可以直接复用 Go Control Plane；
+- 前端仍可使用 React / TypeScript；
+- 本地文件、USB、串口、设备访问更自然；
+- 相比 Electron 运行时更轻；
+- 可通过 Go API 暴露受控的本地系统能力。
+
+桌面客户端模块：
 
 ```text
-Workspace
-Target
-Agent Run
-Task
-Finding
-Evidence
-Artifact
-Approval
-Model Config
-Capability Config
-Tool Config
-SITREP
-Report
-Audit
+工作台
+├── 对话与任务
+├── 任务中心
+├── 设备管理
+└── 智能体管理
+
+外设管理
+├── 外设连接
+├── 外设配置
+└── 协议分析
+
+漏洞管理
+├── 漏洞列表
+└── 漏洞知识库
+
+配置
+├── 运行时
+├── Skills
+└── 设置
 ```
 
-UI 不直接访问 Agent 或 Tool。
+其中：
 
-所有动作统一通过 Control Plane。
+### 外设连接
 
----
+负责：
+
+```text
+发现外设
+连接 / 断开
+查看连接状态
+串口终端
+设备身份识别
+实时数据
+外设日志
+```
+
+### 外设配置
+
+负责配置设备能力参数，例如：
+
+```text
+程控电源
+- 最大输出电压
+- 最大输出电流
+- OVP
+- OCP
+- Ramp
+
+示波器
+- Sample Rate
+- Timebase
+- Trigger
+- Channel
+- Voltage Range
+
+J-Link
+- SWD / JTAG
+- Clock
+- Target Voltage
+- Reset Strategy
+- Device / Core
+
+串口
+- Baud Rate
+- Data Bits
+- Stop Bits
+- Parity
+- Flow Control
+
+蓝牙分析仪
+- Channel
+- PHY
+- Capture Mode
+- Filter
+
+协议扩展板
+- Bus Type
+- Voltage
+- Clock
+- Protocol Profile
+```
+
+### 本地 IPC
+
+Frontend 不直接访问硬件。
+
+推荐调用链：
+
+```text
+React UI
+  ↓
+Wails Binding / Local IPC
+  ↓
+Go Application Service
+  ↓
+Peripheral Manager
+```
+
+后续如需远程 Worker：
+
+```text
+Desktop
+  ↓
+Control Plane
+  ↓
+gRPC / NATS
+  ↓
+Remote Worker
+```
 
 # 6. Control Plane
 
@@ -399,12 +549,10 @@ model:
 
 ```plantuml
 @startuml Commander_Internal_v2
-
 skinparam backgroundColor #FEFEFE
 skinparam defaultFontName "Microsoft YaHei"
 
-rectangle Commander {
-
+package "Commander" {
   rectangle "Target Interpreter" as TI
   rectangle "Planner" as PL
   rectangle "Scheduler" as SC
@@ -424,18 +572,14 @@ TI --> PL
 PL --> SC
 PE --> SC
 BM --> SC
-
 FM --> PE
 FM --> GE
 GE --> RM
-
 SC --> CR
 CR --> AM
-
 FM --> SE
 FM --> RE
 RE --> KC
-
 @enduml
 ```
 
@@ -688,6 +832,32 @@ packet.replay
 device.inspect
 device.validate
 
+serial.open
+serial.read
+serial.write
+serial.configure
+
+power.read
+power.set_voltage
+power.set_current
+power.output
+power.cycle
+power.measure
+
+scope.configure
+scope.capture
+scope.measure
+
+jlink.attach
+jlink.reset
+jlink.halt
+jlink.read_memory
+
+bluetooth.capture
+bluetooth.scan
+
+packet.capture
+
 poc.verify
 cvss.score
 
@@ -701,30 +871,27 @@ knowledge.pattern_match
 
 ```plantuml
 @startuml Capability_Selection
-
 skinparam backgroundColor #FEFEFE
 skinparam defaultFontName "Microsoft YaHei"
 
-rectangle Agent
+rectangle "Agent" as AGENT
 rectangle "Capability Request" as CR
 rectangle "Capability Registry" as REG
 rectangle "Permission Engine" as PERM
 rectangle "Runtime Resolver" as RR
 rectangle "Implementation" as IMP
 rectangle "Tool Gateway" as TG
-rectangle Result
+rectangle "Result" as RESULT
 
-Agent --> CR
+AGENT --> CR
 CR --> REG
 REG --> PERM
 PERM --> RR : allowed
 RR --> IMP
 IMP --> TG
-TG --> Result
-Result --> Agent
-
-PERM --> Agent : denied
-
+TG --> RESULT
+RESULT --> AGENT
+PERM --> AGENT : denied
 @enduml
 ```
 
@@ -797,61 +964,126 @@ permissions:
 
 # 20. Execution Plane
 
-Execution Plane 负责实际运行能力。
-
-组件：
+Execution Plane 分为两条执行链：
 
 ```text
-Tool Gateway
-Permission Check
-Sandbox Manager
-Container Runner
-VM Runner
-Remote Worker
-Device Manager
-Resource Controller
-Artifact Collector
-```
-
-Execution Plane 不进行业务决策。
-
----
-
-# 21. Tool Gateway
-
-Agent 和 Capability 都不应直接运行 Tool。
-
-统一调用：
-
-```text
-Tool Gateway
-```
-
-流程：
-
-```text
+A. Software Tool Execution
 Capability
-   ↓
+  ↓
 Tool Gateway
-   ↓
-Permission Check
-   ↓
-Runtime Selection
-   ↓
-Sandbox / Device / Remote Worker
-   ↓
+  ↓
+Sandbox / Container / VM
+  ↓
 Tool
-   ↓
-Artifact / Evidence
+
+B. Physical Peripheral Execution
+Capability
+  ↓
+Peripheral Manager
+  ↓
+Permission / Safety Guard
+  ↓
+Driver Adapter
+  ↓
+Physical Device
 ```
 
----
+物理外设不应通过通用 Shell Tool 直接访问。
 
-# 22. Tool Definition
+例如禁止：
+
+```text
+Agent -> shell -> echo > /dev/ttyUSB0
+Agent -> shell -> vendor_cli --voltage 30
+```
+
+应改为：
+
+```text
+Agent
+  ↓
+power.set_output
+  ↓
+Peripheral Manager
+  ↓
+SCPI Adapter
+  ↓
+RIGOL DP832
+```
+
+这样权限、参数范围、日志、审计和设备锁都可以统一控制。
+
+# 21. Tool Gateway 与 Peripheral Manager
+
+IoTHunter v2.1 明确区分：
+
+```text
+Tool Gateway
+  = 软件工具执行入口
+
+Peripheral Manager
+  = 真实外设执行入口
+```
+
+## 21.1 Tool Gateway
+
+负责：
+
+```text
+binwalk
+Ghidra
+QEMU
+Fuzzer
+Python Scripts
+Filesystem
+Containerized Analysis
+```
+
+## 21.2 Peripheral Manager
+
+负责：
+
+```text
+设备发现
+设备注册
+Driver Adapter 匹配
+连接 / 断开
+Session
+Lease / Lock
+参数读取
+参数修改
+命令执行
+数据订阅
+Telemetry
+Preset
+安全限制
+审计
+故障恢复
+```
+
+核心接口：
+
+```go
+type PeripheralManager interface {
+    Discover(ctx context.Context) ([]Peripheral, error)
+    Connect(ctx context.Context, id string) (*Session, error)
+    Disconnect(ctx context.Context, sessionID string) error
+
+    GetSchema(ctx context.Context, id string) (ConfigSchema, error)
+    GetConfig(ctx context.Context, sessionID string) (map[string]any, error)
+    ApplyConfig(ctx context.Context, sessionID string, cfg map[string]any) error
+
+    Invoke(ctx context.Context, req PeripheralInvokeRequest) (PeripheralResult, error)
+    Subscribe(ctx context.Context, sessionID string, topics []string) (<-chan TelemetryEvent, error)
+}
+```
+
+# 22. Tool / Peripheral Driver Definition
+
+普通 Tool：
 
 ```yaml
 name: binwalk
-
 category: firmware
 
 execution:
@@ -861,25 +1093,61 @@ permissions:
   network: false
   filesystem: workspace
   device: false
-  destructive: false
-
-resources:
-  cpu: 2
-  memory: 4G
 
 timeout: 600
-
-command:
-  - binwalk
-  - -e
-  - "{{artifact_path}}"
 ```
 
----
+物理外设采用独立 Driver Definition：
 
-# 23. Tool 类型
+```yaml
+id: rigol.dp832
+kind: programmable_power_supply
 
-推荐：
+transport:
+  - usb_visa
+  - lan_scpi
+
+driver:
+  protocol: scpi
+
+capabilities:
+  - power.read
+  - power.set_voltage
+  - power.set_current
+  - power.output
+  - power.measure
+
+config_schema:
+  channel:
+    type: enum
+    values: [CH1, CH2, CH3]
+
+  max_voltage:
+    type: number
+    unit: V
+    minimum: 0
+    maximum: 32
+
+  max_current:
+    type: number
+    unit: A
+    minimum: 0
+    maximum: 3.2
+
+safety:
+  requires_approval_above:
+    voltage: 12
+    current: 2
+
+  emergency_action:
+    - output_off
+```
+
+所有设备参数范围应来自 Driver/Profile，而不是由 LLM 自由生成。
+
+# 23. Tool 与 Peripheral 类型
+
+## Software Tool
 
 ```text
 filesystem
@@ -893,166 +1161,548 @@ firmware_extract
 protocol_parser
 fuzzer
 emulator
-packet
-device
 custom
 ```
 
----
+## Peripheral
 
-# 24. Sandbox
+```text
+serial
+usb
+programmable_power_supply
+oscilloscope
+logic_analyzer
+jlink
+swd
+jtag
+bluetooth_analyzer
+wifi_adapter
+network_capture
+protocol_expansion_board
+custom_lab_device
+```
 
-默认 Tool 必须运行在隔离环境。
+## Transport
+
+底层传输统一抽象：
+
+```text
+Serial
+USB
+HID
+VISA
+SCPI
+TCP
+UDP
+BLE
+Vendor SDK
+CLI Bridge
+```
+
+# 24. Sandbox 与硬件访问边界
+
+软件 Tool 默认运行在：
+
+```text
+Docker / Podman
+```
+
+但外设访问不应默认把宿主机全部 USB/Serial 权限暴露给容器。
 
 推荐：
 
 ```text
-MVP:
-Docker / Podman
-
-Production:
-Container + Remote Worker
-Optional Firecracker / KVM
+Physical Peripheral
+      ↓
+Host Peripheral Service
+      ↓
+Narrow IPC / RPC
+      ↓
+Capability Worker
 ```
 
-限制：
+只有必要场景才做受限设备透传，例如：
 
 ```text
-CPU
-Memory
-Disk
-Runtime
-Network
-Filesystem
-Linux Capability
-Device
+/dev/ttyUSB0
+/dev/hidrawX
+USB VID/PID
 ```
 
----
+透传必须：
+
+```text
+显式 Device Allowlist
++
+Task Permission
++
+Capability Permission
++
+Peripheral Lease
++
+Audit
+```
+
+Production 可扩展：
+
+```text
+Remote Lab Worker
+Firecracker
+KVM
+USB/IP
+Network-isolated Hardware Lab
+```
 
 # 25. Capability Worker 模型
 
-Capability 不需要全部常驻。
-
-推荐：
+Capability 分为三类：
 
 ```text
-Light Capability
-    ↓
-Long-running Worker
-
-Heavy Capability
-    ↓
-Ephemeral Container
+1. Light Software Capability
+2. Heavy Software Capability
+3. Peripheral Capability
 ```
 
-常驻：
+Light：
 
 ```text
 Knowledge Search
-CVE Search
+Metadata
 Config Parser
-Metadata Analysis
+CVE Intelligence
 ```
 
-临时容器：
+Heavy：
 
 ```text
 Firmware Extraction
-Ghidra
-Large Binary Analysis
+Decompiler
+Taint Analysis
 QEMU
 Fuzzing
-Heavy Taint Analysis
 ```
 
----
+Peripheral Capability：
 
-# 26. Device Manager
+```text
+serial.console
+power.cycle
+power.measure
+scope.capture
+jlink.attach
+jlink.read_memory
+bluetooth.capture
+packet.capture
+```
 
-真实设备必须视为特殊资源。
+Peripheral Capability 通常不直接持有设备句柄。
 
-Device Schema：
+设备句柄必须由 Peripheral Manager 管理。
+
+# 26. Peripheral Manager / Device Manager
+
+v2.1 将原 Device Manager 拆分为两个概念：
+
+```text
+Target Device Manager
+= 被研究的 IoT 目标设备
+
+Peripheral Manager
+= 用于研究目标的实验室外设
+```
+
+两者不能混在同一个 Device 表中。
+
+## 26.1 Target Device
+
+示例：
+
+```text
+TP-Link Router
+Smart Lock
+POS
+NFC Reader
+Camera
+Matter Device
+```
+
+## 26.2 Peripheral
+
+示例：
+
+```text
+USB UART
+RIGOL DP832
+Oscilloscope
+J-Link
+Ubertooth
+Logic Analyzer
+Protocol Expansion Board
+```
+
+Peripheral Schema：
 
 ```json
 {
-  "device_id": "",
-  "vendor": "",
-  "model": "",
-  "serial": "",
-  "transport": "",
-  "status": "available",
-  "authorization": true,
-  "owner": "",
-  "lock_owner": null
+  "peripheral_id": "P-001",
+  "driver_id": "rigol.dp832",
+  "kind": "programmable_power_supply",
+
+  "name": "DP832-LAB-01",
+
+  "transport": {
+    "type": "usb_visa",
+    "address": "USB0::0x1AB1::..."
+  },
+
+  "identity": {
+    "vendor": "RIGOL",
+    "model": "DP832",
+    "serial": ""
+  },
+
+  "status": "connected",
+
+  "config": {},
+
+  "capabilities": [
+    "power.read",
+    "power.set_voltage",
+    "power.set_current",
+    "power.output"
+  ],
+
+  "lease": null,
+
+  "authorization": {
+    "allow_automation": true
+  }
 }
 ```
 
-真实设备调用要求：
+## 26.3 Peripheral Session / Lease
 
-```text
-Target authorized
-AND
-Task permits device
-AND
-Capability permits device
-AND
-Tool permits device
-AND
-Device available
+所有写操作必须持有 Session。
+
+```json
+{
+  "session_id": "PS-001",
+  "peripheral_id": "P-001",
+  "owner_type": "task",
+  "owner_id": "TASK-001",
+  "mode": "exclusive",
+  "expires_at": ""
+}
 ```
 
----
-
-# 27. Human Approval
-
-高风险动作必须支持人工确认。
-
-建议强制审批：
+串口监听等场景可以：
 
 ```text
-真实设备 fuzzing
-设备重启
-写 Flash
-修改关键配置
-发送潜在破坏性协议包
-压力型测试
-可能持久化影响的 PoC
+shared-read
 ```
 
----
+程控电源/J-Link 写操作默认：
 
-# 28. Approval 流程
+```text
+exclusive
+```
+
+避免 UI、Agent、自动化脚本同时修改同一个外设。
+
+# 27. 外设权限与 Human Approval
+
+不是所有外设动作都需要人工审批，但必须区分风险等级。
+
+建议：
+
+```text
+L0 Read Only
+- 查询设备信息
+- 读取串口
+- 读取功耗
+- 示波器采样
+
+L1 Controlled Write
+- 修改波特率
+- 修改采集频率
+- 调整非危险参数
+
+L2 Physical Impact
+- Power Cycle
+- 输出电压/电流
+- Reset Target
+- SWD/JTAG Halt
+
+L3 High Risk
+- Flash Write
+- Fuse / OTP
+- Persistent Config Write
+- Destructive Test
+```
+
+策略：
+
+```text
+L0 直接执行
+L1 根据 Workspace Policy
+L2 需要授权策略或人工审批
+L3 默认必须 Human Approval
+```
+
+特别是程控电源必须配置硬限制：
+
+```text
+global_max_voltage
+global_max_current
+per_target_voltage
+per_target_current
+```
+
+LLM 请求超过上限时必须拒绝，而不是弹审批绕过硬限制。
+
+# 28. 外设调用流程
 
 ```plantuml
-@startuml Approval_v2
-
+@startuml Peripheral_Invoke_v21
 skinparam backgroundColor #FEFEFE
 skinparam defaultFontName "Microsoft YaHei"
 
-rectangle Agent
-rectangle Capability
-rectangle Commander
-rectangle "Permission Engine" as PE
-rectangle "Approval Queue" as AQ
-actor Human
-rectangle Executor
+actor User
+participant "Desktop UI" as UI
+participant "Commander" as CMD
+participant "Agent" as AGENT
+participant "Capability Registry" as CR
+participant "Permission Engine" as PE
+participant "Peripheral Manager" as PM
+participant "Driver Adapter" as DA
+participant "Physical Peripheral" as HW
+database "Evidence / Audit" as DB
 
-Agent --> Capability : request
-Capability --> Commander
-Commander --> PE
-
-PE --> AQ : approval required
-AQ --> Human
-Human --> AQ : Approve / Reject
-AQ --> Commander
-
-Commander --> Executor : execute when approved
-
+User -> UI : 启动分析任务
+UI -> CMD : Task
+CMD -> AGENT : 执行任务
+AGENT -> CR : request power.cycle
+CR -> PE : resolve + permission
+PE -> PM : allowed request
+PM -> PM : acquire lease
+PM -> DA : invoke
+DA -> HW : SCPI / Serial / USB / SDK
+HW --> DA : result / telemetry
+DA --> PM
+PM -> DB : audit + telemetry
+PM --> AGENT : structured result
+AGENT -> DB : evidence
+AGENT --> CMD : evaluation
 @enduml
 ```
 
----
+UI 手动调用和 Agent 自动调用使用同一 Peripheral Manager。
+
+差别只在 Caller：
+
+```text
+caller=user
+caller=task
+caller=agent
+caller=skill
+```
+
+这样所有调用都具有统一权限、锁和审计。
+
+
+# 28.1 Peripheral Plane 详细设计
+
+Peripheral Plane 是 IoTHunter 与真实实验环境的边界。
+
+## 28.1.1 四层结构
+
+```text
+Peripheral Capability
+        ↓
+Peripheral Manager
+        ↓
+Driver Adapter
+        ↓
+Transport
+        ↓
+Physical Peripheral
+```
+
+例如程控电源：
+
+```text
+power.set_voltage
+        ↓
+Peripheral Manager
+        ↓
+RigolDP832Adapter
+        ↓
+SCPI over VISA
+        ↓
+DP832
+```
+
+例如 J-Link：
+
+```text
+jlink.read_memory
+        ↓
+Peripheral Manager
+        ↓
+JLinkAdapter
+        ↓
+Vendor SDK / CLI
+        ↓
+J-Link Probe
+        ↓
+Target
+```
+
+## 28.1.2 Adapter 接口
+
+```go
+type PeripheralAdapter interface {
+    Match(info DiscoveryInfo) bool
+    Open(ctx context.Context, endpoint Endpoint) (PeripheralHandle, error)
+    Close(ctx context.Context, handle PeripheralHandle) error
+
+    Identity(ctx context.Context, handle PeripheralHandle) (Identity, error)
+    Schema(ctx context.Context, handle PeripheralHandle) (ConfigSchema, error)
+
+    ReadConfig(ctx context.Context, handle PeripheralHandle) (map[string]any, error)
+    ApplyConfig(ctx context.Context, handle PeripheralHandle, cfg map[string]any) error
+
+    Invoke(ctx context.Context, handle PeripheralHandle, command string, args map[string]any) (Result, error)
+}
+```
+
+## 28.1.3 自动发现
+
+Discovery Provider：
+
+```text
+Serial Enumerator
+USB Enumerator
+VISA Enumerator
+LAN SCPI Discovery
+Bluetooth Adapter Discovery
+Vendor SDK Discovery
+```
+
+发现结果只代表“设备存在”，不能自动授予调用权限。
+
+## 28.1.4 配置 Schema
+
+外设配置页面不能针对每个设备硬编码全部表单。
+
+建议由 Driver 返回 JSON Schema / UI Schema：
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "max_voltage": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 32,
+      "unit": "V"
+    },
+    "max_current": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 3.2,
+      "unit": "A"
+    }
+  }
+}
+```
+
+Desktop UI 根据 Schema 动态生成：
+
+```text
+输入框
+Dropdown
+Toggle
+Channel Selector
+Preset
+单位
+范围提示
+```
+
+这样新接入设备通常只需要增加 Driver/Profile，不需要重写 UI。
+
+## 28.1.5 Preset
+
+支持用户保存：
+
+```text
+UART 115200 8N1
+DP832 3.3V / 1A
+DP832 5V / 2A
+J-Link SWD 4MHz
+Scope 100MHz Sample
+BLE Capture Profile
+```
+
+Preset 是配置模板，不自动绕过安全策略。
+
+## 28.1.6 Telemetry
+
+统一格式：
+
+```json
+{
+  "peripheral_id": "P-001",
+  "session_id": "PS-001",
+  "timestamp": "",
+  "topic": "power.measurement",
+  "values": {
+    "voltage": 5.01,
+    "current": 0.12,
+    "power": 0.601
+  }
+}
+```
+
+常见 Topic：
+
+```text
+serial.rx
+serial.tx
+power.measurement
+scope.measurement
+scope.waveform
+bluetooth.packet
+bluetooth.rssi
+jlink.target_state
+device.connection
+```
+
+## 28.1.7 外设证据化
+
+Agent 请求的实验操作如果和漏洞验证有关，结果应可以转为 Evidence。
+
+例如：
+
+```text
+power.cycle
+→ target rebooted
+→ UART boot log
+→ service entered vulnerable state
+```
+
+最终 Evidence 可以关联：
+
+```text
+Power Command Artifact
+Serial Log
+Timestamp
+Target State
+Validation Finding
+```
+
+因此外设不仅是“设备管理功能”，还是 Validation Evidence 的来源。
+
 
 # 29. Data Plane
 
@@ -1233,37 +1883,36 @@ metadata
 
 ```plantuml
 @startuml Finding_State_v2
-
 skinparam backgroundColor #FEFEFE
 skinparam defaultFontName "Microsoft YaHei"
 
+state Hypothesis
+state Candidate
+state Analyzing
+state ReadyForValidation
+state Validating
+state Validated
+state Reportable
+state Reported
+state KnowledgeCaptured
+state Dropped
+
 [*] --> Hypothesis
-
 Hypothesis --> Candidate : Recon Evidence
-
 Candidate --> Analyzing : Commander selects
-
 Analyzing --> Candidate : insufficient evidence
-
 Analyzing --> ReadyForValidation : path complete
-
 ReadyForValidation --> Validating
-
 Validating --> Analyzing : need more constraint
 Validating --> Candidate : premise invalid
 Validating --> Validated : confirmed
-
 Validated --> Reportable : Validation Gate passed
-
 Candidate --> Dropped
 Analyzing --> Dropped
 Validating --> Dropped
-
 Reportable --> Reported
 Reported --> KnowledgeCaptured
-
 KnowledgeCaptured --> [*]
-
 @enduml
 ```
 
@@ -1319,25 +1968,28 @@ KnowledgeCaptured --> [*]
 
 ```plantuml
 @startuml Task_State_v2
-
 skinparam backgroundColor #FEFEFE
 skinparam defaultFontName "Microsoft YaHei"
+
+state queued
+state assigned
+state running
+state completed
+state failed
+state blocked
+state paused
 
 [*] --> queued
 queued --> assigned
 assigned --> running
-
 running --> completed
 running --> failed
 running --> blocked
 running --> paused
-
 failed --> queued : retry
 blocked --> queued : dependency resolved
 paused --> running : resume
-
 completed --> [*]
-
 @enduml
 ```
 
@@ -1391,6 +2043,31 @@ human.approval.denied
 ```
 
 ---
+
+
+## 36.1 外设事件
+
+新增事件：
+
+```text
+peripheral.discovered
+peripheral.connected
+peripheral.disconnected
+peripheral.config.changed
+peripheral.session.opened
+peripheral.session.closed
+peripheral.command.started
+peripheral.command.completed
+peripheral.command.failed
+peripheral.telemetry
+peripheral.safety.denied
+peripheral.approval.required
+peripheral.error
+```
+
+Telemetry 必须和普通 Audit/Event 区分。
+
+高频数据例如示波器波形、BLE 捕获包不直接写 Event Store；应进入 Artifact/Telemetry Storage，Event 只记录引用。
 
 # 37. Scheduler
 
@@ -1583,32 +2260,26 @@ REJECTED
 
 ```plantuml
 @startuml Gate_Fallback_v2
-
 skinparam backgroundColor #FEFEFE
 skinparam defaultFontName "Microsoft YaHei"
 
-rectangle Candidate
+rectangle "Candidate" as CANDIDATE
 diamond "Finding Gate" as FG
-rectangle Analysis
-rectangle Validation
+rectangle "Analysis" as ANALYSIS
+rectangle "Validation" as VALIDATION
 diamond "Validation Gate" as VG
-rectangle Report
-rectangle Hold
+rectangle "Report" as REPORT
+rectangle "Hold" as HOLD
 
-Candidate --> FG
-
-FG --> Analysis : PASS
-FG --> Hold : HOLD / DROP
-
-Analysis --> Validation
-
-Validation --> VG
-
-VG --> Report : REPORTABLE
-VG --> Analysis : NEED_MORE_ANALYSIS
-VG --> Validation : NEED_MORE_VALIDATION
-VG --> Candidate : premise unclear
-
+CANDIDATE --> FG
+FG --> ANALYSIS : PASS
+FG --> HOLD : HOLD / DROP
+ANALYSIS --> VALIDATION
+VALIDATION --> VG
+VG --> REPORT : REPORTABLE
+VG --> ANALYSIS : NEED_MORE_ANALYSIS
+VG --> VALIDATION : NEED_MORE_VALIDATION
+VG --> CANDIDATE : premise unclear
 @enduml
 ```
 
@@ -1693,36 +2364,29 @@ sprintf()
 
 ```plantuml
 @startuml Knowledge_Feedback_v2
-
 skinparam backgroundColor #FEFEFE
 skinparam defaultFontName "Microsoft YaHei"
 
 rectangle "Current Research" as R
 rectangle "Validated Finding" as F
 rectangle "Knowledge Extractor" as K
-
 database "Vendor Profile" as VP
 database "Vulnerability Pattern" as PAT
 database "Validation Strategy" as VS
 database "Workspace Skill" as SK
-
 rectangle "Next Research" as NEXT
 
 R --> F
 F --> K
-
 K --> VP
 K --> PAT
 K --> VS
 K --> SK
-
 VP --> NEXT
 PAT --> NEXT
 VS --> NEXT
 SK --> NEXT
-
 NEXT --> R : improve p(x) / q(x)
-
 @enduml
 ```
 
@@ -1771,7 +2435,7 @@ workspace/
 │   ├── binary/
 │   ├── poc/
 │   ├── fuzz/
-│   ├── core/
+│   ├── harness/
 │   └── reports/
 
 ├── tasks/
@@ -1783,6 +2447,12 @@ workspace/
 ├── skills/
 
 ├── approvals/
+
+├── peripherals/
+│   ├── profiles/
+│   ├── presets/
+│   ├── sessions/
+│   └── telemetry/
 
 ├── logs/
 
@@ -1945,26 +2615,20 @@ sha256
 
 ```plantuml
 @startuml Recon_Workflow_v2
-
 skinparam backgroundColor #FEFEFE
 skinparam defaultFontName "Microsoft YaHei"
 
-rectangle Target
-rectangle ReconAgent
-rectangle "Capability Registry"
-rectangle "Patch / CVE / Fingerprint / Attack Surface"
-database "Finding Store"
+rectangle "Target" as TARGET
+rectangle "Recon Agent" as RECON
+rectangle "Capability Registry" as REG
+rectangle "Patch / CVE / Fingerprint / Attack Surface" as INTEL
+database "Finding Store" as STORE
 
-Target --> ReconAgent
-
-ReconAgent --> "Capability Registry" : select capabilities
-
-"Capability Registry" --> "Patch / CVE / Fingerprint / Attack Surface"
-
-"Patch / CVE / Fingerprint / Attack Surface" --> ReconAgent : structured result
-
-ReconAgent --> "Finding Store" : candidate + evidence
-
+TARGET --> RECON
+RECON --> REG : select capabilities
+REG --> INTEL
+INTEL --> RECON : structured result
+RECON --> STORE : candidate + evidence
 @enduml
 ```
 
@@ -1974,28 +2638,21 @@ ReconAgent --> "Finding Store" : candidate + evidence
 
 ```plantuml
 @startuml Analysis_Workflow_v2
-
 skinparam backgroundColor #FEFEFE
 skinparam defaultFontName "Microsoft YaHei"
 
-database "Finding Store" as F
-rectangle AnalysisAgent
-rectangle "Capability Registry"
-rectangle "Binary / Firmware / Protocol / Taint"
-rectangle "Constraint Extraction"
+database "Finding Store" as STORE
+rectangle "Analysis Agent" as AGENT
+rectangle "Capability Registry" as REG
+rectangle "Binary / Firmware / Protocol / Taint" as CAP
+rectangle "Constraint Extraction" as CONSTRAINT
 
-F --> AnalysisAgent : finding context
-
-AnalysisAgent --> "Capability Registry"
-
-"Capability Registry" --> "Binary / Firmware / Protocol / Taint"
-
-"Binary / Firmware / Protocol / Taint" --> AnalysisAgent
-
-AnalysisAgent --> "Constraint Extraction"
-
-"Constraint Extraction" --> F : evidence / path / constraint
-
+STORE --> AGENT : finding context
+AGENT --> REG
+REG --> CAP
+CAP --> AGENT
+AGENT --> CONSTRAINT
+CONSTRAINT --> STORE : evidence / path / constraint
 @enduml
 ```
 
@@ -2005,32 +2662,24 @@ AnalysisAgent --> "Constraint Extraction"
 
 ```plantuml
 @startuml Validation_Workflow_v2
-
 skinparam backgroundColor #FEFEFE
 skinparam defaultFontName "Microsoft YaHei"
 
-database "Finding Store" as F
-rectangle ValidationAgent
+database "Finding Store" as STORE
+rectangle "Validation Agent" as AGENT
 diamond "Plausible?" as P
-rectangle "Capability Registry"
-rectangle "Fuzz / Emulation / Device / PoC"
-rectangle "Validation Evidence"
+rectangle "Capability Registry" as REG
+rectangle "Fuzz / Emulation / Device / PoC" as CAP
+rectangle "Validation Evidence" as EVIDENCE
 
-F --> ValidationAgent
-
-ValidationAgent --> P
-
-P --> F : No / downgrade
-P --> "Capability Registry" : Yes
-
-"Capability Registry" --> "Fuzz / Emulation / Device / PoC"
-
-"Fuzz / Emulation / Device / PoC" --> ValidationAgent
-
-ValidationAgent --> "Validation Evidence"
-
-"Validation Evidence" --> F
-
+STORE --> AGENT
+AGENT --> P
+P --> STORE : No / downgrade
+P --> REG : Yes
+REG --> CAP
+CAP --> AGENT
+AGENT --> EVIDENCE
+EVIDENCE --> STORE
 @enduml
 ```
 
@@ -2040,55 +2689,37 @@ ValidationAgent --> "Validation Evidence"
 
 ```plantuml
 @startuml Runtime_Sequence_v2
-
 skinparam backgroundColor #FEFEFE
 skinparam defaultFontName "Microsoft YaHei"
 
 actor Researcher
-
-participant API
-participant Commander
-participant Scheduler
-participant Agent
+participant "API" as API
+participant "Commander" as CMD
+participant "Scheduler" as SCHED
+participant "Agent" as AGENT
 participant "Capability Registry" as CR
 participant "Tool Gateway" as TG
 participant "Sandbox / Device" as EXEC
-database FindingStore
-database Knowledge
+database "Finding Store" as STORE
+database "Knowledge" as KNOW
 
 Researcher -> API : 创建 Workspace + Target
-
-API -> Commander : start research
-
-Commander -> Scheduler : create task
-
-Scheduler -> Agent : assign task
-
-Agent -> CR : capability request
-
+API -> CMD : start research
+CMD -> SCHED : create task
+SCHED -> AGENT : assign task
+AGENT -> CR : capability request
 CR -> TG : resolve implementation
-
 TG -> EXEC : run
-
 EXEC --> TG : artifact / result
-
 TG --> CR
-CR --> Agent : capability result
-
-Agent -> FindingStore : evidence / finding update
-
-FindingStore --> Commander : finding event
-
-Commander -> Commander : gate / priority / next step
-
-Commander -> Scheduler : next task
-
-Commander -> Knowledge : capture reusable knowledge
-
-Commander -> API : SITREP / report
-
+CR --> AGENT : capability result
+AGENT -> STORE : evidence / finding update
+STORE --> CMD : finding event
+CMD -> CMD : gate / priority / next step
+CMD -> SCHED : next task
+CMD -> KNOW : capture reusable knowledge
+CMD -> API : SITREP / report
 API -> Researcher : result
-
 @enduml
 ```
 
@@ -2136,67 +2767,78 @@ audit_logs
 
 ---
 
-# 57. API 设计
+# 57. Application Service / API 设计
 
-推荐：
+IoTHunter v2.1 是本地客户端，业务入口分为：
 
 ```text
-Go Backend
-REST
+React UI
+  ↓
+Wails Bindings / Local IPC
+  ↓
+Go Application Services
+```
+
+不要求所有本地操作都走 HTTP。
+
+核心 Application Service：
+
+```text
+WorkspaceService
+TaskService
+AgentService
+FindingService
+PeripheralService
+CapabilityService
+RuntimeService
+KnowledgeService
+```
+
+PeripheralService：
+
+```go
+type PeripheralService interface {
+    List(ctx context.Context) ([]PeripheralDTO, error)
+    Discover(ctx context.Context) ([]PeripheralDTO, error)
+
+    Connect(ctx context.Context, id string) (SessionDTO, error)
+    Disconnect(ctx context.Context, sessionID string) error
+
+    GetConfigSchema(ctx context.Context, id string) (ConfigSchemaDTO, error)
+    GetConfig(ctx context.Context, sessionID string) (map[string]any, error)
+    ApplyConfig(ctx context.Context, sessionID string, cfg map[string]any) error
+
+    Invoke(ctx context.Context, req InvokeDTO) (InvokeResultDTO, error)
+}
+```
+
+如果后续提供 HTTP API：
+
+```text
+GET  /api/v1/peripherals
+POST /api/v1/peripherals/discover
+
+POST /api/v1/peripherals/{id}/connect
+POST /api/v1/peripheral-sessions/{id}/disconnect
+
+GET  /api/v1/peripherals/{id}/schema
+GET  /api/v1/peripheral-sessions/{id}/config
+PUT  /api/v1/peripheral-sessions/{id}/config
+
+POST /api/v1/peripheral-sessions/{id}/invoke
+
+GET  /api/v1/peripheral-sessions/{id}/telemetry
+```
+
+Telemetry：
+
+```text
+Wails Event
+or
 SSE / WebSocket
 ```
 
-Workspace：
-
-```text
-POST /api/v1/workspaces
-GET  /api/v1/workspaces/{id}
-POST /api/v1/workspaces/{id}/run
-POST /api/v1/workspaces/{id}/pause
-```
-
-Target：
-
-```text
-POST /api/v1/workspaces/{id}/targets
-GET  /api/v1/targets/{id}
-```
-
-Finding：
-
-```text
-GET  /api/v1/findings
-GET  /api/v1/findings/{id}
-POST /api/v1/findings/{id}/promote
-POST /api/v1/findings/{id}/drop
-```
-
-Task：
-
-```text
-GET  /api/v1/tasks
-GET  /api/v1/tasks/{id}
-POST /api/v1/tasks/{id}/retry
-POST /api/v1/tasks/{id}/cancel
-```
-
-Capability：
-
-```text
-GET /api/v1/capabilities
-GET /api/v1/capabilities/{id}
-POST /api/v1/capabilities/{id}/test
-```
-
-Approval：
-
-```text
-GET  /api/v1/approvals
-POST /api/v1/approvals/{id}/approve
-POST /api/v1/approvals/{id}/reject
-```
-
----
+高频波形/PCAP 使用 Artifact 引用，不通过 JSON Event 持续传大对象。
 
 # 58. 内部 RPC / Worker 通信
 
@@ -2374,13 +3016,16 @@ Semantic Similarity
 
 # 65. 技术栈
 
-## Frontend
+## Desktop Client
 
 ```text
+Wails v2+
+React
 TypeScript
-React / Next.js
 Tailwind CSS
 ```
+
+Wails Go Runtime 负责本地能力和外设访问，React 只负责 UI。
 
 ## Core Backend
 
@@ -2397,7 +3042,7 @@ OpenTelemetry
 Go + net/http / chi
 ```
 
-保持 IoTHunter 核心简洁。
+保持核心 Harness 简洁。
 
 ## Capability Runtime
 
@@ -2434,8 +3079,9 @@ Docker / Podman
 ```text
 iothunter/
 
-├── web/
-│   └── nextjs/
+├── desktop/
+│   ├── frontend/          # React / TypeScript
+│   └── wails/             # Desktop binding
 
 ├── cmd/
 │   ├── api/
@@ -2467,7 +3113,21 @@ iothunter/
 │   │   ├── permission/
 │   │   └── runtime/
 │   │
-│   ├── devices/
+│   ├── devices/          # Target Device
+│   │
+│   ├── peripherals/
+│   │   ├── manager/
+│   │   ├── registry/
+│   │   ├── session/
+│   │   ├── safety/
+│   │   ├── telemetry/
+│   │   └── adapters/
+│   │       ├── serial/
+│   │       ├── scpi/
+│   │       ├── visa/
+│   │       ├── jlink/
+│   │       ├── bluetooth/
+│   │       └── usb/
 │   │
 │   ├── findings/
 │   │
@@ -2511,7 +3171,7 @@ iothunter/
 
 # 67. 核心领域对象
 
-IoTHunter v2 建议固定以下 12 个核心对象：
+IoTHunter v2.1 建议固定以下核心对象：
 
 ```text
 Workspace
@@ -2526,20 +3186,50 @@ Artifact
 Skill
 Event
 Approval
+
+Peripheral
+PeripheralDriver
+PeripheralProfile
+PeripheralSession
+PeripheralPreset
+Telemetry
 ```
 
-其中最核心的是：
+其中必须区分：
+
+```text
+Target
+= 被研究对象
+
+Peripheral
+= 研究过程中使用的实验室设备
+```
+
+例如：
+
+```text
+Target:
+TP-Link AX73
+
+Peripherals:
+USB UART
+RIGOL DP832
+J-Link
+Oscilloscope
+Ubertooth
+```
+
+最核心的运行对象：
 
 ```text
 Task
 Finding
 Evidence
 Capability
+Peripheral Session
 Tool Runtime
 Commander
 ```
-
----
 
 # 68. AI Coding Agent 开发约束
 
@@ -2574,13 +3264,23 @@ AI 开发本系统时必须遵循：
 27. Tool 不承担业务逻辑；
 28. Execution Plane 不直接修改 Finding State；
 29. 所有关键结论必须可追溯至 Evidence；
-30. 所有权限默认最小化。
+30. 所有权限默认最小化；
+31. Agent 不允许直接打开串口、USB、VISA、J-Link；
+32. 所有物理外设访问必须通过 Peripheral Manager；
+33. Target Device 与 Peripheral 必须使用不同领域对象；
+34. 外设写操作必须持有 Lease；
+35. 所有外设参数必须通过 Config Schema 校验；
+36. 程控电源等设备必须支持不可绕过的硬安全上限；
+37. UI 手动调用与 Agent 自动调用必须复用同一 Peripheral Service；
+38. 外设 Telemetry 与 Audit Event 必须分离；
+39. 物理设备断连后必须自动使 Session 失效；
+40. Capability 不得长期持有原始设备句柄。
 
 ---
 
 # 69. MVP 开发计划
 
-## Phase 1：IoTHunter Core
+## Phase 1：Harness Core
 
 实现：
 
@@ -2603,23 +3303,30 @@ Event Bus
 
 ---
 
-## Phase 2：Capability Isolation
+## Phase 2：Capability & Peripheral Isolation
 
 实现：
 
 ```text
 Capability Registry
-Capability Request
-Capability Result
+Capability Request / Result
 Capability Worker
 Tool Gateway
 Permission Engine
 Sandbox
+
+Peripheral Manager
+Peripheral Registry
+Serial Adapter
+SCPI Adapter
+Peripheral Session / Lease
+Config Schema
+Telemetry
 ```
 
 目标：
 
-> 完成 Agent → Capability → Tool → Evidence 的安全执行链。
+> 同时完成 Agent → Capability → Tool → Evidence 与 Agent → Peripheral Capability → Peripheral Manager → Hardware → Evidence 两条安全执行链。
 
 ---
 
@@ -2671,35 +3378,55 @@ Advanced Device Manager
 # 70. MVP 最小闭环
 
 ```plantuml
-@startuml MVP_v2
-
+@startuml MVP_v21
 skinparam backgroundColor #FEFEFE
 skinparam defaultFontName "Microsoft YaHei"
 
-rectangle Target
-rectangle Commander
-rectangle Agent
-rectangle Capability
-rectangle Tool
-database FindingStore
-rectangle Report
+rectangle "Desktop Client" as UI
+rectangle "Commander" as CMD
+rectangle "Agent" as AGENT
+rectangle "Capability" as CAP
+rectangle "Tool Gateway" as TOOL
+rectangle "Peripheral Manager" as PM
+rectangle "UART / Power Supply" as HW
+database "Finding / Evidence" as STORE
+rectangle "Report" as REPORT
 
-Target --> Commander
-Commander --> Agent
-Agent --> Capability
-Capability --> Tool
-Tool --> FindingStore : Evidence
-FindingStore --> Commander
-Commander --> Report
-
+UI --> CMD
+CMD --> AGENT
+AGENT --> CAP
+CAP --> TOOL : software capability
+CAP --> PM : peripheral capability
+PM --> HW
+TOOL --> STORE : Evidence
+PM --> STORE : Evidence / Telemetry
+STORE --> CMD
+CMD --> REPORT
 @enduml
 ```
 
----
+外设 MVP 建议第一批只支持：
+
+```text
+1. Serial / UART
+2. SCPI Programmable Power Supply
+3. J-Link 基础连接
+```
+
+第二批再支持：
+
+```text
+Oscilloscope
+Bluetooth Analyzer
+Logic Analyzer
+Protocol Expansion Board
+```
+
+这样可以先把统一外设抽象、Session/Lease、参数 Schema 和调用链做稳定。
 
 # 71. Definition of Done
 
-IoTHunter v2 完成的最低标准：
+IoTHunter v2 Harness 完成的最低标准：
 
 ```text
 [ ] 可以创建 Workspace
@@ -2729,6 +3456,17 @@ IoTHunter v2 完成的最低标准：
 [ ] 可以生成 report.md
 [ ] 可以沉淀 Vendor Profile
 [ ] 可以加载 Workspace Skill
+[ ] 可以发现 USB / Serial 外设
+[ ] 可以建立和释放 Peripheral Session
+[ ] 可以配置串口参数
+[ ] 可以配置程控电源安全上限
+[ ] 可以通过统一 API 控制程控电源
+[ ] 可以持续订阅串口 / 电源 Telemetry
+[ ] Agent 可以通过 Capability 调用外设
+[ ] Agent 无法绕过 Peripheral Manager 直接操作外设
+[ ] 多任务访问同一写设备时 Lease 生效
+[ ] 外设断连后 Session 自动失效
+[ ] 外设调用完整写入 Audit
 ```
 
 ---
@@ -2750,16 +3488,18 @@ IoTHunter 应被实现为：
 最终设计原则：
 
 ```text
-Agent 负责思考
-Capability 负责专业能力
-Tool 负责实际执行
-Harness 负责控制一切
-Finding / Evidence 负责记录事实
-Knowledge / Skill 负责复利
+Agent              负责思考与决策
+Capability         负责专业能力抽象
+Tool               负责软件执行
+Peripheral Manager 负责真实硬件编排
+Driver Adapter      负责设备协议适配
+Harness             负责调度、权限和审计
+Finding / Evidence  负责记录事实
+Knowledge / Skill   负责复利
 ```
 
 ---
 
 # 73. 一句话总结
 
-> **IoTHunter 是一个 Capability-Isolated Multi-Agent IoT Vulnerability Research Harness：模型可替换、Agent 可扩展、Capability 可组合、Tool 可插拔、执行可隔离、Finding 可追溯、任务可恢复、权限可控制、知识可复用。**
+> **IoTHunter 是一个 Capability-Isolated Multi-Agent IoT Vulnerability Research Harness：在统一 Harness 中同时编排 AI Agent、软件安全工具与真实 IoT 实验外设，通过 Peripheral Manager 将串口、程控电源、示波器、J-Link、蓝牙分析仪等能力安全地暴露给 Agent 与用户。**

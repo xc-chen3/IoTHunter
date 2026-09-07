@@ -73,7 +73,7 @@ go run ./cmd/iothunter serve --addr :8080 --data .iothunter/state.json
 
 ## Native desktop client
 
-IoTHunter is distributed as a native Electron desktop client with a local Go control-plane sidecar. It opens a dedicated application window, not a browser page. The client follows the supplied MultiCa-style shell: a four-pane workbench with navigation, task queue, main research canvas, and inspector. Chinese and English can be switched from the top bar, and the bundled application icon is `logo2.png`.
+IoTHunter is distributed as a native Electron desktop client with a local Go control-plane sidecar. It opens a dedicated application window, not a browser page. The client uses a responsive MultiCa-style shell and switches between focused layouts for conversations, tasks, devices, agents, peripherals, captures, findings, and configuration. Chinese and English can be switched from the top bar, and the bundled application icon is `logo2.png`.
 
 ~~~bash
 make build
@@ -83,11 +83,20 @@ npm --prefix desktop start
 
 The desktop process automatically starts `bin/iothunter serve` on a loopback port and stores state in the platform application-data directory. To connect the client to an already running API, use `IOTHUNTER_API_URL` or `./bin/iothunter desktop --api-url http://127.0.0.1:8080`.
 
-The desktop navigation follows the reference IoT investigation workflow: Workbench (chat/tasks, task center, devices, agent management, analysis and validation), Peripheral Management, Vulnerability Management, and Configuration (runtime, Skills, and settings). Layouts adapt to the active feature: task conversations use queue + canvas + inspector, agent and peripheral configuration pages use an internal three-pane workspace, and registries use a focused single canvas.
+The desktop navigation has four groups and thirteen entries:
+
+~~~text
+Workbench: Conversation management, Task management, Device management, Agent management
+Peripheral Management: Peripheral connections, Peripheral configuration, Protocol analysis
+Vulnerability Management: Vulnerability list, Vulnerability knowledge
+Configuration: Runtime, Skills, Capability center, Settings
+~~~
+
+Conversation records are separate from executable Tasks. Target devices are separate from lab peripherals, and protocol analysis distinguishes raw captures, parser output, and research judgement. Layouts adapt to the active feature: conversations use an internal three-pane workspace, task and finding views can show queue and inspector context, peripheral configuration uses type-specific fields, and registries use a focused single canvas.
 
 The console also exposes the architecture's control-plane objects: Agent pool, Skill workflows, Evidence and Artifact records, Approval queue, Event stream, Audit Log, CapabilityRun, ToolRun, GateDecision, and Knowledge items. Finding Gate actions and Task pause/resume/retry/cancel operations are available from the API and are reflected in the workspace view.
 
-IoT-specific projections are available at `/api/v1/iot/summary`, `/api/v1/iot/devices`, `/api/v1/iot/vulnerabilities`, and `/api/v1/iot/artifacts`. They provide device-centric views for integrations while preserving workspace authorization boundaries in the canonical records.
+IoT-specific projections are available at `/api/v1/iot/summary`, `/api/v1/iot/devices`, `/api/v1/iot/peripherals`, `/api/v1/iot/vulnerabilities`, and `/api/v1/iot/artifacts`. They provide device-centric views for integrations while preserving workspace authorization boundaries in the canonical records.
 
 ### Host runtime integration
 
@@ -190,6 +199,22 @@ curl -X POST http://127.0.0.1:8080/api/v1/findings/F-xxxx/gate \
 ~~~
 
 Registry and knowledge endpoints are available at `/api/v1/agents`, `/api/v1/skills`, `/api/v1/knowledge`, `/api/v1/events`, and `/api/v1/audit`. Capability workers can use the same structured request/result model to replace the built-in offline implementations.
+
+Conversation and peripheral endpoints are workspace-scoped:
+
+~~~bash
+curl -X POST http://127.0.0.1:8080/api/v1/workspaces/W-xxxx/conversations \
+  -H 'Content-Type: application/json' \
+  -d '{"title":"Boot log review","content":"Inspect the UART boot sequence"}'
+curl http://127.0.0.1:8080/api/v1/workspaces/W-xxxx
+curl -X POST http://127.0.0.1:8080/api/v1/workspaces/W-xxxx/peripherals \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"UART 01","kind":"serial","driver":"pyserial","port":"/dev/ttyUSB0"}'
+curl -X POST http://127.0.0.1:8080/api/v1/peripherals/PER-xxxx \
+  -H 'Content-Type: application/json' -d '{"status":"connected"}'
+~~~
+
+Peripheral configuration is stored separately from connection state. Opening a page never starts capture, replay, power output, or another physical action; those actions must be explicit capability requests checked by the control plane.
 
 ## Storage and schemas
 

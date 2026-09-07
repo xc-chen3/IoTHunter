@@ -73,7 +73,7 @@ go run ./cmd/iothunter serve --addr :8080 --data .iothunter/state.json
 
 ## 原生桌面客户端
 
-IoTHunter 使用原生 Electron 桌面客户端，Go 控制平面作为本地 sidecar 进程运行。启动后会打开独立的应用窗口，不会跳转浏览器。客户端参考提供的 MultiCa 界面，采用左侧导航、任务列表、中间研究工作区和右侧详情检查器的四栏工作台。顶部可以切换中文和英文，打包后的应用图标使用 `logo2.png`。
+IoTHunter 使用原生 Electron 桌面客户端，Go 控制平面作为本地 sidecar 进程运行。启动后会打开独立的应用窗口，不会跳转浏览器。客户端采用响应式 MultiCa 风格，根据对话、任务、目标设备、智能体、外设、采集记录、漏洞和配置功能切换布局。顶部可以切换中文和英文，打包后的应用图标使用 `logo2.png`。
 
 ~~~bash
 make build
@@ -83,7 +83,16 @@ npm --prefix desktop start
 
 桌面客户端会自动启动 loopback 地址上的 `bin/iothunter serve`，并将状态文件存储到当前平台的应用数据目录。如果已有 API 服务，可以设置 `IOTHUNTER_API_URL`，或者执行 `./bin/iothunter desktop --api-url http://127.0.0.1:8080` 连接它。
 
-桌面侧边栏按照参考图的 IoT 研究流程组织为：工作台（对话与任务、任务中心、设备管理、智能体管理、分析与验证）、外设管理、漏洞管理和配置（运行时、Skills、设置）。不同功能会使用不同栏数：任务对话使用任务列表、主画布和详情检查器；智能体管理和外设配置使用内部三栏工作区；注册表使用单一主画布。
+桌面侧边栏固定为四个分组、十三个入口：
+
+~~~text
+工作台：对话管理、任务管理、设备管理、智能体管理
+外设管理：外设连接、外设配置、协议分析
+漏洞管理：漏洞列表、漏洞知识库
+配置：运行时、Skills、能力中心、设置
+~~~
+
+对话记录和实际执行的任务分开管理；设备管理只维护被研究的 IoT 目标设备，外设管理维护串口、电源、示波器、J-Link、蓝牙分析仪等实验仪器。协议分析页面分别展示原始采集、解析结果和研究判断。不同功能使用不同栏数：对话使用内部三栏工作区，任务和漏洞页面按需显示队列与检查器，外设配置根据设备类型生成参数，注册表使用单一主画布。
 
 控制台还覆盖架构中的控制面对象：Agent 池、Skill 工作流、Evidence 和 Artifact 记录、Approval 队列、Event 流、Audit Log、CapabilityRun、ToolRun、GateDecision 和 Knowledge。Finding Gate，以及 Task 的暂停、恢复、重试和取消操作，都可以通过接口执行并在工作空间视图中查看。
 
@@ -197,6 +206,24 @@ curl -X POST http://127.0.0.1:8080/api/v1/findings/F-xxxx/gate \
 ~~~
 
 Agent、Skill、Knowledge、Event 和 Audit 接口分别位于 `/api/v1/agents`、`/api/v1/skills`、`/api/v1/knowledge`、`/api/v1/events` 和 `/api/v1/audit`。后续可以使用同一套结构化请求/结果模型替换内置离线能力。
+
+## 对话和外设接口
+
+对话和外设接口按工作区管理：
+
+~~~bash
+curl -X POST http://127.0.0.1:8080/api/v1/workspaces/W-xxxx/conversations \
+  -H 'Content-Type: application/json' \
+  -d '{"title":"启动日志分析","content":"检查 UART 启动序列"}'
+curl http://127.0.0.1:8080/api/v1/workspaces/W-xxxx
+curl -X POST http://127.0.0.1:8080/api/v1/workspaces/W-xxxx/peripherals \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"UART 01","kind":"serial","driver":"pyserial","port":"/dev/ttyUSB0"}'
+curl -X POST http://127.0.0.1:8080/api/v1/peripherals/PER-xxxx \
+  -H 'Content-Type: application/json' -d '{"status":"connected"}'
+~~~
+
+外设配置和连接状态分开保存。打开页面不会自动开始采集、回放、供电或执行其他物理操作；这些动作必须由明确的能力请求发起，并经过控制平面的权限检查。
 
 ## 数据和目录
 

@@ -158,6 +158,67 @@ type Device struct {
 	Config      map[string]any `json:"config,omitempty"`
 }
 
+// Peripheral is a lab instrument or adapter used to study a target Device.
+// It is intentionally separate from Device so target research records do not
+// get mixed with UART, power, scope, JTAG, or Bluetooth hardware.
+type Peripheral struct {
+	ID           string         `json:"id"`
+	WorkspaceID  string         `json:"workspace_id"`
+	Name         string         `json:"name"`
+	Kind         string         `json:"kind"`
+	Driver       string         `json:"driver,omitempty"`
+	Port         string         `json:"port,omitempty"`
+	Status       string         `json:"status"`
+	OccupiedBy   string         `json:"occupied_by,omitempty"`
+	Capabilities []string       `json:"capabilities,omitempty"`
+	Config       map[string]any `json:"config,omitempty"`
+	SafetyLimits map[string]any `json:"safety_limits,omitempty"`
+	ConnectedAt  *time.Time     `json:"connected_at,omitempty"`
+	UpdatedAt    time.Time      `json:"updated_at"`
+}
+
+type DeviceAttachment struct {
+	ID             string `json:"id"`
+	WorkspaceID    string `json:"workspace_id"`
+	TargetDeviceID string `json:"target_device_id"`
+	PeripheralID   string `json:"peripheral_id"`
+	Role           string `json:"role"`
+	Channel        string `json:"channel,omitempty"`
+}
+
+type ConversationMessage struct {
+	ID         string              `json:"id"`
+	Role       string              `json:"role"`
+	Content    string              `json:"content"`
+	References map[string][]string `json:"references,omitempty"`
+	CreatedAt  time.Time           `json:"created_at"`
+}
+
+type Conversation struct {
+	ID          string                `json:"id"`
+	WorkspaceID string                `json:"workspace_id"`
+	Title       string                `json:"title"`
+	Status      string                `json:"status"`
+	Messages    []ConversationMessage `json:"messages,omitempty"`
+	TaskIDs     []string              `json:"task_ids,omitempty"`
+	ArchivedAt  *time.Time            `json:"archived_at,omitempty"`
+	CreatedAt   time.Time             `json:"created_at"`
+	UpdatedAt   time.Time             `json:"updated_at"`
+}
+
+type ProtocolCapture struct {
+	ID           string         `json:"id"`
+	WorkspaceID  string         `json:"workspace_id"`
+	PeripheralID string         `json:"peripheral_id,omitempty"`
+	Source       string         `json:"source"`
+	RawPath      string         `json:"raw_path,omitempty"`
+	Parsed       map[string]any `json:"parsed,omitempty"`
+	Judgement    string         `json:"judgement,omitempty"`
+	Status       string         `json:"status"`
+	StartedAt    time.Time      `json:"started_at"`
+	CompletedAt  *time.Time     `json:"completed_at,omitempty"`
+}
+
 type PermissionSet struct {
 	Network     bool   `json:"network"`
 	Filesystem  string `json:"filesystem"`
@@ -340,24 +401,28 @@ type AuditLog struct {
 }
 
 type State struct {
-	Version        int             `json:"version"`
-	Workspaces     []Workspace     `json:"workspaces"`
-	Targets        []Target        `json:"targets"`
-	Devices        []Device        `json:"devices"`
-	Agents         []Agent         `json:"agents"`
-	Skills         []Skill         `json:"skills"`
-	Knowledge      []KnowledgeItem `json:"knowledge"`
-	Tasks          []Task          `json:"tasks"`
-	Findings       []Finding       `json:"findings"`
-	Evidence       []Evidence      `json:"evidence"`
-	Artifacts      []Artifact      `json:"artifacts"`
-	AgentRuns      []AgentRun      `json:"agent_runs"`
-	CapabilityRuns []CapabilityRun `json:"capability_runs"`
-	ToolRuns       []ToolRun       `json:"tool_runs"`
-	Gates          []GateDecision  `json:"gate_decisions"`
-	Approvals      []Approval      `json:"approvals"`
-	Events         []Event         `json:"events"`
-	Audit          []AuditLog      `json:"audit"`
+	Version        int                `json:"version"`
+	Workspaces     []Workspace        `json:"workspaces"`
+	Targets        []Target           `json:"targets"`
+	Devices        []Device           `json:"devices"`
+	Peripherals    []Peripheral       `json:"peripherals"`
+	Attachments    []DeviceAttachment `json:"attachments"`
+	Conversations  []Conversation     `json:"conversations"`
+	Captures       []ProtocolCapture  `json:"captures"`
+	Agents         []Agent            `json:"agents"`
+	Skills         []Skill            `json:"skills"`
+	Knowledge      []KnowledgeItem    `json:"knowledge"`
+	Tasks          []Task             `json:"tasks"`
+	Findings       []Finding          `json:"findings"`
+	Evidence       []Evidence         `json:"evidence"`
+	Artifacts      []Artifact         `json:"artifacts"`
+	AgentRuns      []AgentRun         `json:"agent_runs"`
+	CapabilityRuns []CapabilityRun    `json:"capability_runs"`
+	ToolRuns       []ToolRun          `json:"tool_runs"`
+	Gates          []GateDecision     `json:"gate_decisions"`
+	Approvals      []Approval         `json:"approvals"`
+	Events         []Event            `json:"events"`
+	Audit          []AuditLog         `json:"audit"`
 }
 
 func CanTransitionFinding(from, to FindingState) bool {
