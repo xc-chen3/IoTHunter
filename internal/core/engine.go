@@ -396,6 +396,12 @@ func (e *Engine) SubmitResearch(ctx context.Context, workspaceID, targetID strin
 }
 
 func (e *Engine) SubmitCapabilityTask(ctx context.Context, workspaceID, targetID, capabilityID, objective string, permissions PermissionSet, budget Budget) (Task, error) {
+	e.mu.RLock()
+	_, capabilityExists := e.capabilities[capabilityID]
+	e.mu.RUnlock()
+	if !capabilityExists {
+		return Task{}, fmt.Errorf("capability %s not found", capabilityID)
+	}
 	if _, ok := e.Store.Workspace(workspaceID); !ok {
 		return Task{}, errors.New("workspace not found")
 	}
@@ -420,28 +426,92 @@ func (e *Engine) SubmitCapabilityTask(ctx context.Context, workspaceID, targetID
 		return Task{}, err
 	}
 	_ = e.Store.AddEvent(Event{ID: NewID("EVT"), Type: "task.created", WorkspaceID: workspaceID, TaskID: task.ID, Payload: map[string]any{"capability_id": capabilityID}, CreatedAt: now()})
+	e.setTaskNode(task.ID, "commander", "planning", "completed", "Task plan accepted", map[string]any{"capability_id": capabilityID})
 	go e.runCapabilityTask(context.Background(), task, target)
 	return task, nil
 }
 
+func (e *Engine) setTaskNode(taskID, name, kind, status, summary string, output map[string]any) {
+	started := now()
+	completed := started
+	_ = e.Store.UpdateTask(taskID, func(task *Task) error {
+		for i := range task.Nodes {
+			if task.Nodes[i].Name != name || task.Nodes[i].Kind != kind {
+				continue
+			}
+			task.Nodes[i].Status, task.Nodes[i].Summary, task.Nodes[i].Output = status, summary, output
+			if status == "completed" || status == "failed" || status == "blocked" {
+				task.Nodes[i].CompletedAt = &completed
+			}
+			return nil
+		}
+		var done *time.Time
+		if status != "running" {
+			done = &completed
+		}
+		task.Nodes = append(task.Nodes, TaskNode{ID: NewID("NODE"), Name: name, Kind: kind, Status: status, Summary: summary, Output: output, StartedAt: started, CompletedAt: done})
+		return nil
+	})
+	if task, ok := e.Store.Task(taskID); ok {
+		_ = e.Store.AddEvent(Event{ID: NewID("EVT"), Type: "task.node." + status, WorkspaceID: task.WorkspaceID, TaskID: taskID, Payload: map[string]any{"node": name, "kind": kind, "summary": summary, "output": output}, CreatedAt: completed})
+	}
+}
+
+func (e *Engine) appendTaskConversation(taskID, role, content string) {
+	task, ok := e.Store.Task(taskID)
+	if !ok || task.ConversationID == "" || strings.TrimSpace(content) == "" {
+		return
+	}
+	_ = e.Store.UpdateConversation(task.ConversationID, func(c *Conversation) error {
+		c.Messages = append(c.Messages, ConversationMessage{ID: NewID("MSG"), Role: role, Content: content, References: map[string][]string{"tasks": {task.ID}}, CreatedAt: now()})
+		return nil
+	})
+}
+
 func (e *Engine) runCapabilityTask(ctx context.Context, task Task, target Target) {
+	e.setTaskNode(task.ID, "scheduler", "scheduler", "running", "Preparing capability execution", nil)
 	_ = e.transitionTask(task.ID, TaskAssigned, "commander")
 	_ = e.transitionTask(task.ID, TaskRunning, "scheduler")
-	req := CapabilityRequest{RequestID: NewID("REQ"), TaskID: task.ID, AgentID: task.AssignedAgent, CapabilityID: task.RequiredCapabilities[0], Objective: task.Objective, Inputs: map[string]any{"vendor": target.Vendor, "model": target.Model, "address": target.Address, "transport": target.Transport}, Permissions: task.Permissions, Budget: task.Budget}
+	capabilityID := task.RequiredCapabilities[0]
+	e.setTaskNode(task.ID, capabilityID, "capability", "running", "Capability execution started", nil)
+	if task.Budget.MaxRuntimeSeconds > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(task.Budget.MaxRuntimeSeconds)*time.Second)
+		defer cancel()
+	}
+	req := CapabilityRequest{RequestID: NewID("REQ"), TaskID: task.ID, AgentID: task.AssignedAgent, CapabilityID: capabilityID, Objective: task.Objective, Inputs: map[string]any{"vendor": target.Vendor, "model": target.Model, "address": target.Address, "transport": target.Transport}, Permissions: task.Permissions, Budget: task.Budget}
 	result, err := e.Request(ctx, req, task)
 	agentRun := AgentRun{ID: NewID("AGENTRUN"), AgentID: task.AssignedAgent, TaskID: task.ID, Status: "completed", Model: "configured-by-user", Input: map[string]any{"objective": task.Objective, "capability": task.RequiredCapabilities[0]}, Output: map[string]any{"summary": result.Summary, "confidence": result.Confidence}, StartedAt: task.CreatedAt, CompletedAt: timePtr(now())}
 	if err != nil {
 		agentRun.Status = "failed"
 		agentRun.Output = map[string]any{"error": err.Error()}
 		_ = e.Store.AddAgentRun(agentRun)
-		_ = e.Store.UpdateTask(task.ID, func(v *Task) error { v.Status = TaskFailed; v.Error = err.Error(); return nil })
+		_ = e.Store.UpdateTask(task.ID, func(v *Task) error {
+			v.Status = TaskFailed
+			v.Error = err.Error()
+			v.Summary = "Task execution failed"
+			v.Output = map[string]any{"error": err.Error()}
+			return nil
+		})
+		e.setTaskNode(task.ID, capabilityID, "capability", "failed", err.Error(), map[string]any{"error": err.Error()})
+		e.setTaskNode(task.ID, "scheduler", "scheduler", "failed", "Scheduler stopped after capability failure", map[string]any{"error": err.Error()})
+		e.setTaskNode(task.ID, "summary", "summary", "failed", "Task execution failed", map[string]any{"error": err.Error()})
+		e.appendTaskConversation(task.ID, "assistant", "Task failed: "+err.Error())
 		return
 	}
 	if result.Status == "pending_approval" {
 		agentRun.Status = "blocked"
 		agentRun.Output = map[string]any{"reason": "human approval required"}
 		_ = e.Store.AddAgentRun(agentRun)
-		_ = e.Store.UpdateTask(task.ID, func(v *Task) error { v.Status = TaskBlocked; v.Error = "waiting for human approval"; return nil })
+		_ = e.Store.UpdateTask(task.ID, func(v *Task) error {
+			v.Status = TaskBlocked
+			v.Error = "waiting for human approval"
+			v.Summary = "Waiting for human approval"
+			return nil
+		})
+		e.setTaskNode(task.ID, capabilityID, "capability", "blocked", "Waiting for human approval", map[string]any{"reason": "human approval required"})
+		e.setTaskNode(task.ID, "scheduler", "scheduler", "blocked", "Scheduler paused for approval", nil)
+		e.appendTaskConversation(task.ID, "assistant", "Task is waiting for human approval before continuing.")
 		return
 	}
 	_ = e.Store.AddAgentRun(agentRun)
@@ -457,12 +527,28 @@ func (e *Engine) runCapabilityTask(ctx context.Context, task Task, target Target
 		_ = e.Store.AddEvidence(evidence)
 	}
 	_ = e.Store.AddEvent(Event{ID: NewID("EVT"), Type: "evidence.added", WorkspaceID: task.WorkspaceID, TaskID: task.ID, FindingID: finding.ID, Payload: map[string]any{"capability_id": task.RequiredCapabilities[0]}, CreatedAt: now()})
+	e.setTaskNode(task.ID, capabilityID, "capability", "completed", result.Summary, map[string]any{"confidence": result.Confidence, "evidence_count": len(result.Evidence), "metrics": result.Metrics})
+	e.setTaskNode(task.ID, "scheduler", "scheduler", "completed", "Capability execution finished", nil)
+	_ = e.Store.UpdateTask(task.ID, func(v *Task) error {
+		v.Summary = result.Summary
+		v.Output = map[string]any{"confidence": result.Confidence, "evidence_count": len(result.Evidence), "metrics": result.Metrics}
+		return nil
+	})
+	e.setTaskNode(task.ID, "summary", "summary", "completed", "Task completed", map[string]any{"finding_id": finding.ID, "summary": result.Summary})
+	e.appendTaskConversation(task.ID, "assistant", "Task completed: "+result.Summary)
 	_ = e.transitionTask(task.ID, TaskCompleted, "scheduler")
 }
 
 func (e *Engine) runTask(ctx context.Context, task Task, target Target) {
+	e.setTaskNode(task.ID, "scheduler", "scheduler", "running", "Preparing passive fingerprint", nil)
 	_ = e.transitionTask(task.ID, TaskAssigned, "scheduler")
 	_ = e.transitionTask(task.ID, TaskRunning, "scheduler")
+	e.setTaskNode(task.ID, "target.fingerprint", "capability", "running", "Collecting declared target metadata", nil)
+	if task.Budget.MaxRuntimeSeconds > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(task.Budget.MaxRuntimeSeconds)*time.Second)
+		defer cancel()
+	}
 	req := CapabilityRequest{RequestID: NewID("REQ"), TaskID: task.ID, AgentID: task.AssignedAgent, CapabilityID: "target.fingerprint", Objective: task.Objective, Inputs: map[string]any{"vendor": target.Vendor, "model": target.Model, "address": target.Address, "transport": target.Transport}, Permissions: task.Permissions, Budget: task.Budget}
 	result, err := e.Request(ctx, req, task)
 	agentRun := AgentRun{ID: NewID("AGENTRUN"), AgentID: task.AssignedAgent, TaskID: task.ID, Status: "completed", Model: "configured-by-user", Input: map[string]any{"objective": task.Objective, "capabilities": task.RequiredCapabilities}, StartedAt: task.CreatedAt, CompletedAt: timePtr(now())}
@@ -470,15 +556,33 @@ func (e *Engine) runTask(ctx context.Context, task Task, target Target) {
 		agentRun.Status = "failed"
 		agentRun.Output = map[string]any{"error": err.Error()}
 		_ = e.Store.AddAgentRun(agentRun)
-		_ = e.Store.UpdateTask(task.ID, func(t *Task) error { t.Status = TaskFailed; t.Error = err.Error(); return nil })
+		_ = e.Store.UpdateTask(task.ID, func(t *Task) error {
+			t.Status = TaskFailed
+			t.Error = err.Error()
+			t.Summary = "Task execution failed"
+			t.Output = map[string]any{"error": err.Error()}
+			return nil
+		})
 		_ = e.audit("task.failed", "scheduler", "task", task.ID, map[string]any{"error": err.Error()})
+		e.setTaskNode(task.ID, "target.fingerprint", "capability", "failed", err.Error(), map[string]any{"error": err.Error()})
+		e.setTaskNode(task.ID, "scheduler", "scheduler", "failed", "Scheduler stopped after capability failure", map[string]any{"error": err.Error()})
+		e.setTaskNode(task.ID, "summary", "summary", "failed", "Task execution failed", map[string]any{"error": err.Error()})
+		e.appendTaskConversation(task.ID, "assistant", "Task failed: "+err.Error())
 		return
 	}
 	if result.Status == "pending_approval" {
 		agentRun.Status = "blocked"
 		agentRun.Output = map[string]any{"reason": "human approval required"}
 		_ = e.Store.AddAgentRun(agentRun)
-		_ = e.Store.UpdateTask(task.ID, func(t *Task) error { t.Status = TaskBlocked; t.Error = "waiting for human approval"; return nil })
+		_ = e.Store.UpdateTask(task.ID, func(t *Task) error {
+			t.Status = TaskBlocked
+			t.Error = "waiting for human approval"
+			t.Summary = "Waiting for human approval"
+			return nil
+		})
+		e.setTaskNode(task.ID, "target.fingerprint", "capability", "blocked", "Waiting for human approval", map[string]any{"reason": "human approval required"})
+		e.setTaskNode(task.ID, "scheduler", "scheduler", "blocked", "Scheduler paused for approval", nil)
+		e.appendTaskConversation(task.ID, "assistant", "Task is waiting for human approval before continuing.")
 		return
 	}
 	agentRun.Output = map[string]any{"summary": result.Summary, "confidence": result.Confidence}
@@ -496,6 +600,15 @@ func (e *Engine) runTask(ctx context.Context, task Task, target Target) {
 		_ = e.Store.AddEvidence(evidence)
 	}
 	_ = e.Store.AddEvent(Event{ID: NewID("EVT"), Type: "finding.created", WorkspaceID: task.WorkspaceID, TaskID: task.ID, FindingID: finding.ID, Payload: map[string]any{"state": finding.State}, CreatedAt: now()})
+	e.setTaskNode(task.ID, "target.fingerprint", "capability", "completed", result.Summary, map[string]any{"confidence": result.Confidence, "evidence_count": len(result.Evidence), "metrics": result.Metrics})
+	e.setTaskNode(task.ID, "scheduler", "scheduler", "completed", "Capability execution finished", nil)
+	_ = e.Store.UpdateTask(task.ID, func(v *Task) error {
+		v.Summary = result.Summary
+		v.Output = map[string]any{"confidence": result.Confidence, "evidence_count": len(result.Evidence), "metrics": result.Metrics}
+		return nil
+	})
+	e.setTaskNode(task.ID, "summary", "summary", "completed", "Task completed", map[string]any{"finding_id": finding.ID, "summary": result.Summary})
+	e.appendTaskConversation(task.ID, "assistant", "Task completed: "+result.Summary)
 	_ = e.transitionTask(task.ID, TaskCompleted, "scheduler")
 	_ = e.audit("task.completed", "scheduler", "task", task.ID, map[string]any{"finding_id": finding.ID})
 }
@@ -510,13 +623,22 @@ func displayTarget(t Target) string {
 	return t.ID
 }
 func (e *Engine) transitionTask(id string, to TaskStatus, actor string) error {
-	return e.Store.UpdateTask(id, func(t *Task) error {
+	task, ok := e.Store.Task(id)
+	if !ok {
+		return errors.New("task not found")
+	}
+	if err := e.Store.UpdateTask(id, func(t *Task) error {
 		if !CanTransitionTask(t.Status, to) {
 			return fmt.Errorf("invalid task transition %s -> %s", t.Status, to)
 		}
 		t.Status = to
 		return nil
-	})
+	}); err != nil {
+		return err
+	}
+	_ = e.Store.AddEvent(Event{ID: NewID("EVT"), Type: "task.status_changed", WorkspaceID: task.WorkspaceID, TaskID: id, Payload: map[string]any{"from": task.Status, "to": to, "actor": actor}, CreatedAt: now()})
+	_ = e.audit("task.status_changed", actor, "task", id, map[string]any{"from": task.Status, "to": to})
+	return nil
 }
 func (e *Engine) TransitionFinding(id string, to FindingState, actor string) error {
 	f, ok := e.Store.Finding(id)

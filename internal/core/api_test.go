@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 func TestAPIWorkspaceTargetAndRun(t *testing.T) {
@@ -198,4 +199,62 @@ func TestAPIConversationAndPeripheralBoundaries(t *testing.T) {
 	if res.Code != http.StatusOK || !bytes.Contains(res.Body.Bytes(), []byte(`"conversations"`)) || !bytes.Contains(res.Body.Bytes(), []byte(`"peripherals"`)) {
 		t.Fatalf("aggregate boundary fields missing: %s", res.Body.String())
 	}
+}
+
+func TestAPIConversationTaskExecutionAndDetail(t *testing.T) {
+	store, _ := NewStore("")
+	engine := NewEngine(store, 1)
+	workspace, err := engine.CreateWorkspace("chain", "test", "end to end")
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err := engine.CreateTarget(workspace.ID, Target{Name: "router", Vendor: "Acme", Model: "R1", Transport: "metadata", Authorized: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := NewAPIServer(engine).Handler()
+	request := func(method, path string, body any) *httptest.ResponseRecorder {
+		var payload bytes.Buffer
+		if body != nil {
+			_ = json.NewEncoder(&payload).Encode(body)
+		}
+		req := httptest.NewRequest(method, path, &payload)
+		req.Header.Set("Content-Type", "application/json")
+		res := httptest.NewRecorder()
+		server.ServeHTTP(res, req)
+		return res
+	}
+	res := request(http.MethodPost, "/api/v1/workspaces/"+workspace.ID+"/conversations", map[string]string{"title": "research"})
+	if res.Code != http.StatusCreated {
+		t.Fatalf("conversation create status = %d", res.Code)
+	}
+	var conversation Conversation
+	_ = json.NewDecoder(res.Body).Decode(&conversation)
+	res = request(http.MethodPost, "/api/v1/conversations/"+conversation.ID+"/message", map[string]any{"content": "fingerprint this target", "create_task": true, "target_id": target.ID})
+	if res.Code != http.StatusOK {
+		t.Fatalf("message status = %d, body=%s", res.Code, res.Body.String())
+	}
+	var response struct {
+		Conversation Conversation `json:"conversation"`
+		Task         Task         `json:"task"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Task.ID == "" || response.Task.ConversationID != conversation.ID {
+		t.Fatalf("task not linked to conversation: %+v", response.Task)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		res = request(http.MethodGet, "/api/v1/tasks/"+response.Task.ID+"/detail", nil)
+		var detail struct {
+			Task Task `json:"task"`
+		}
+		_ = json.NewDecoder(res.Body).Decode(&detail)
+		if detail.Task.Status == TaskCompleted && len(detail.Task.Nodes) >= 3 && detail.Task.Summary != "" {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("task did not complete with node output and summary")
 }

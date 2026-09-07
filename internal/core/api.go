@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -339,7 +340,7 @@ func (a *APIServer) conversations(w http.ResponseWriter, r *http.Request) {
 
 func (a *APIServer) conversationRoutes(w http.ResponseWriter, r *http.Request) {
 	parts := pathParts(r.URL.Path, "/api/v1/conversations/")
-	if len(parts) != 1 {
+	if len(parts) < 1 || len(parts) > 2 {
 		writeError(w, http.StatusNotFound, fmt.Errorf("conversation route not found"))
 		return
 	}
@@ -354,6 +355,82 @@ func (a *APIServer) conversationRoutes(w http.ResponseWriter, r *http.Request) {
 	}
 	if current == nil {
 		writeError(w, http.StatusNotFound, fmt.Errorf("conversation not found"))
+		return
+	}
+	if len(parts) == 2 && parts[1] == "message" {
+		if r.Method != http.MethodPost {
+			writeError(w, http.StatusMethodNotAllowed, fmt.Errorf("method not allowed"))
+			return
+		}
+		var in struct {
+			Content      string              `json:"content"`
+			CreateTask   bool                `json:"create_task"`
+			TargetID     string              `json:"target_id"`
+			CapabilityID string              `json:"capability_id"`
+			References   map[string][]string `json:"references"`
+		}
+		if err := decode(r, &in); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		if strings.TrimSpace(in.Content) == "" {
+			writeError(w, http.StatusBadRequest, fmt.Errorf("content is required"))
+			return
+		}
+		if in.CapabilityID == "" {
+			in.CapabilityID = "target.fingerprint"
+		}
+		var createdTask *Task
+		if in.CreateTask {
+			if in.TargetID == "" {
+				for _, target := range a.Engine.Store.Snapshot().Targets {
+					if target.WorkspaceID == current.WorkspaceID {
+						in.TargetID = target.ID
+						break
+					}
+				}
+			}
+			if in.TargetID == "" {
+				writeError(w, http.StatusBadRequest, fmt.Errorf("target_id is required to create a task"))
+				return
+			}
+			task, err := a.Engine.SubmitCapabilityTask(r.Context(), current.WorkspaceID, in.TargetID, in.CapabilityID, in.Content, PermissionSet{Filesystem: "workspace-readonly"}, Budget{MaxRuntimeSeconds: 300, MaxToolCalls: 10})
+			if err != nil {
+				writeError(w, http.StatusBadRequest, err)
+				return
+			}
+			createdTask = &task
+			_ = a.Engine.Store.UpdateTask(task.ID, func(v *Task) error { v.ConversationID = current.ID; return nil })
+			if linked, ok := a.Engine.Store.Task(task.ID); ok {
+				createdTask = &linked
+			}
+		}
+		if err := a.Engine.Store.UpdateConversation(current.ID, func(c *Conversation) error {
+			c.Messages = append(c.Messages, ConversationMessage{ID: NewID("MSG"), Role: "user", Content: in.Content, References: in.References, CreatedAt: now()})
+			if createdTask != nil {
+				c.TaskIDs = append(c.TaskIDs, createdTask.ID)
+			}
+			reply := "Commander received the request."
+			if createdTask != nil {
+				reply = fmt.Sprintf("Task %s was created and queued. I will report node output and the final summary here.", createdTask.ID)
+			}
+			c.Messages = append(c.Messages, ConversationMessage{ID: NewID("MSG"), Role: "assistant", Content: reply, CreatedAt: now()})
+			return nil
+		}); err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		updated := a.Engine.Store.Snapshot().Conversations
+		for _, c := range updated {
+			if c.ID == current.ID {
+				writeJSON(w, http.StatusOK, map[string]any{"conversation": c, "task": createdTask})
+				return
+			}
+		}
+		return
+	}
+	if len(parts) != 1 {
+		writeError(w, http.StatusNotFound, fmt.Errorf("conversation route not found"))
 		return
 	}
 	if r.Method == http.MethodGet {
@@ -691,6 +768,44 @@ func (a *APIServer) workspaceRoutes(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusCreated, c)
 		return
 	}
+	if len(parts) == 2 && parts[1] == "attachments" {
+		if r.Method == http.MethodGet {
+			writeJSON(w, http.StatusOK, map[string]any{"attachments": filterAttachments(a.Engine.Store.Snapshot().Attachments, id)})
+			return
+		}
+		if r.Method != http.MethodPost {
+			writeError(w, http.StatusMethodNotAllowed, fmt.Errorf("method not allowed"))
+			return
+		}
+		var in DeviceAttachment
+		if err := decode(r, &in); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		if strings.TrimSpace(in.TargetDeviceID) == "" || strings.TrimSpace(in.PeripheralID) == "" || strings.TrimSpace(in.Role) == "" {
+			writeError(w, http.StatusBadRequest, fmt.Errorf("target_device_id, peripheral_id, and role are required"))
+			return
+		}
+		st := a.Engine.Store.Snapshot()
+		target, targetOK := findTarget(st.Targets, in.TargetDeviceID)
+		peripheral, peripheralOK := findPeripheral(st.Peripherals, in.PeripheralID)
+		if !targetOK || target.WorkspaceID != id {
+			writeError(w, http.StatusBadRequest, fmt.Errorf("target device not found in workspace"))
+			return
+		}
+		if !peripheralOK || peripheral.WorkspaceID != id {
+			writeError(w, http.StatusBadRequest, fmt.Errorf("peripheral not found in workspace"))
+			return
+		}
+		in.ID, in.WorkspaceID = NewID("ATT"), id
+		if err := a.Engine.Store.CreateAttachment(in); err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		_ = a.Engine.audit("device.attachment.created", "api", "attachment", in.ID, map[string]any{"target_device_id": target.ID, "peripheral_id": peripheral.ID})
+		writeJSON(w, http.StatusCreated, in)
+		return
+	}
 	if len(parts) == 3 && parts[1] == "devices" && r.Method == http.MethodPost {
 		deviceID := parts[2]
 		var patch struct {
@@ -1017,6 +1132,40 @@ func (a *APIServer) approvalRoutes(w http.ResponseWriter, r *http.Request) {
 }
 func (a *APIServer) taskRoutes(w http.ResponseWriter, r *http.Request) {
 	parts := pathParts(r.URL.Path, "/api/v1/tasks/")
+	if len(parts) == 2 && parts[1] == "detail" && r.Method == http.MethodGet {
+		task, ok := a.Engine.Store.Task(parts[0])
+		if !ok {
+			writeError(w, http.StatusNotFound, fmt.Errorf("task not found"))
+			return
+		}
+		st := a.Engine.Store.Snapshot()
+		events := make([]Event, 0)
+		for _, event := range st.Events {
+			if event.TaskID == task.ID {
+				events = append(events, event)
+			}
+		}
+		agentRuns := make([]AgentRun, 0)
+		capabilityRuns := make([]CapabilityRun, 0)
+		toolRuns := make([]ToolRun, 0)
+		for _, run := range st.AgentRuns {
+			if run.TaskID == task.ID {
+				agentRuns = append(agentRuns, run)
+			}
+		}
+		for _, run := range st.CapabilityRuns {
+			if run.TaskID == task.ID {
+				capabilityRuns = append(capabilityRuns, run)
+			}
+		}
+		for _, run := range st.ToolRuns {
+			if run.TaskID == task.ID {
+				toolRuns = append(toolRuns, run)
+			}
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"task": task, "events": events, "agent_runs": agentRuns, "capability_runs": capabilityRuns, "tool_runs": toolRuns})
+		return
+	}
 	if len(parts) == 2 && r.Method == http.MethodPost {
 		task, ok := a.Engine.Store.Task(parts[0])
 		if !ok {
@@ -1053,7 +1202,14 @@ func (a *APIServer) taskRoutes(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		_ = a.Engine.Store.AddEvent(Event{ID: NewID("EVT"), Type: "task." + action, WorkspaceID: task.WorkspaceID, TaskID: task.ID, CreatedAt: now()})
+		_ = a.Engine.Store.AddEvent(Event{ID: NewID("EVT"), Type: "task.status_changed", WorkspaceID: task.WorkspaceID, TaskID: task.ID, Payload: map[string]any{"from": task.Status, "to": targetStatus, "actor": "api"}, CreatedAt: now()})
 		_ = a.Engine.audit("task."+action, "api", "task", task.ID, nil)
+		if action == "retry" {
+			if target, ok := a.Engine.Store.Target(task.TargetID); ok {
+				fresh, _ := a.Engine.Store.Task(task.ID)
+				go a.Engine.runCapabilityTask(context.Background(), fresh, target)
+			}
+		}
 		updated, _ := a.Engine.Store.Task(task.ID)
 		writeJSON(w, http.StatusOK, updated)
 		return
@@ -1158,6 +1314,14 @@ func findPeripheral(in []Peripheral, id string) (Peripheral, bool) {
 		}
 	}
 	return Peripheral{}, false
+}
+func findTarget(in []Target, id string) (Target, bool) {
+	for _, v := range in {
+		if v.ID == id {
+			return v, true
+		}
+	}
+	return Target{}, false
 }
 func filterKnowledge(in []KnowledgeItem, id string) []KnowledgeItem {
 	out := []KnowledgeItem{}

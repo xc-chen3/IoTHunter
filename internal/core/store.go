@@ -94,6 +94,9 @@ func (s *Store) CreateDevice(d Device) error {
 func (s *Store) CreatePeripheral(p Peripheral) error {
 	return s.mutate(func(st *State) error { st.Peripherals = append(st.Peripherals, p); return nil })
 }
+func (s *Store) CreateAttachment(a DeviceAttachment) error {
+	return s.mutate(func(st *State) error { st.Attachments = append(st.Attachments, a); return nil })
+}
 func (s *Store) UpdatePeripheral(id string, fn func(*Peripheral) error) error {
 	return s.mutate(func(st *State) error {
 		for i := range st.Peripherals {

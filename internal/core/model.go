@@ -232,11 +232,23 @@ type Budget struct {
 	MaxTokens         int `json:"max_tokens,omitempty"`
 }
 
+type TaskNode struct {
+	ID          string         `json:"id"`
+	Name        string         `json:"name"`
+	Kind        string         `json:"kind"`
+	Status      string         `json:"status"`
+	Summary     string         `json:"summary,omitempty"`
+	Output      map[string]any `json:"output,omitempty"`
+	StartedAt   time.Time      `json:"started_at"`
+	CompletedAt *time.Time     `json:"completed_at,omitempty"`
+}
+
 type Task struct {
 	ID                   string         `json:"id"`
 	WorkspaceID          string         `json:"workspace_id"`
 	TargetID             string         `json:"target_id,omitempty"`
 	FindingID            string         `json:"finding_id,omitempty"`
+	ConversationID       string         `json:"conversation_id,omitempty"`
 	Type                 string         `json:"type"`
 	Objective            string         `json:"objective"`
 	Priority             int            `json:"priority"`
@@ -247,6 +259,9 @@ type Task struct {
 	Permissions          PermissionSet  `json:"permissions"`
 	Budget               Budget         `json:"budget"`
 	Error                string         `json:"error,omitempty"`
+	Summary              string         `json:"summary,omitempty"`
+	Output               map[string]any `json:"output,omitempty"`
+	Nodes                []TaskNode     `json:"nodes,omitempty"`
 	CreatedAt            time.Time      `json:"created_at"`
 	UpdatedAt            time.Time      `json:"updated_at"`
 }
