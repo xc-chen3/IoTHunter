@@ -6,19 +6,7 @@ IoTHunter 是面向 IoT 安全研究的本地桌面平台。它将任务编排�
 
 ## 架构
 
-```text
-Wails + React/TypeScript
-          |
-      本地 HTTP API / Wails Binding
-          |
-Go 控制平面（Commander、Scheduler、Task Engine、Event Bus）
-          |
-能力注册中心 -> Tool Gateway / Python Worker
-          |
-外设管理器 -> 串口、TCP/SCPI 及其他驱动适配器
-          |
-SQLite 状态库 + 工件 + 审计事件
-```
+![IoTHunter 架构总览](IoTHunterArch.png)
 
 系统记录完整研究链路：
 

@@ -6,19 +6,7 @@ IoTHunter is a local desktop platform for IoT security research. It brings toget
 
 ## Architecture
 
-```text
-Wails + React/TypeScript
-          |
-      local HTTP API / Wails bindings
-          |
-Go Control Plane (Commander, Scheduler, Task Engine, Event Bus)
-          |
-Capability Registry -> Tool Gateway / Python Worker
-          |
-Peripheral Manager -> Serial, TCP/SCPI and additional driver adapters
-          |
-SQLite state + artifacts + audit events
-```
+![IoTHunter architecture overview](IoTHunterArch.png)
 
 The complete research chain is recorded as:
 
