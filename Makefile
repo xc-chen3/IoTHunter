@@ -1,6 +1,6 @@
 APP := iothunter
 
-.PHONY: test vet fmt build build-all demo serve desktop client-install client capabilities
+.PHONY: test vet fmt build build-all demo serve desktop client-install client capabilities frontend-install frontend-build wails-build-linux desktop-package desktop-dist
 
 test:
 	go test ./...
@@ -34,9 +34,26 @@ desktop:
 
 client-install:
 	npm --prefix desktop install
+	npm --prefix desktop/frontend install
+
+frontend-install:
+	npm --prefix desktop/frontend install
+
+frontend-build:
+	npm --prefix desktop/frontend run build
+	cp -R desktop/frontend/dist/. desktop/wails/frontend-dist/
+
+wails-build-linux: frontend-build
+	cd desktop/wails && go build -tags 'production webkit2_41' -trimpath -ldflags '-s -w' -o ../../bin/iothunter-wails .
 
 client:
 	npm --prefix desktop start
+
+desktop-package: build frontend-build
+	npm --prefix desktop run package
+
+desktop-dist: build frontend-build
+	npm --prefix desktop run dist
 
 capabilities:
 	go run ./cmd/iothunter capabilities

@@ -1,0 +1,58 @@
+@import "../../renderer/styles.css";
+
+button, input, select, textarea { font: inherit; }
+button { cursor: pointer; }
+.react-page { min-height: 100%; }
+.react-page .page-head { align-items: flex-start; }
+.react-page .page-head h1 { margin-bottom: 6px; }
+.react-layout { display: grid; grid-template-columns: 248px minmax(0, 1fr); min-height: 100vh; background: #f7f9fc; }
+.react-sidebar { min-height: 100vh; }
+.react-main { min-width: 0; display: flex; flex-direction: column; }
+.react-content { flex: 1; min-width: 0; overflow: auto; padding: 24px 28px 40px; }
+.react-topbar { display: flex; gap: 14px; align-items: center; min-height: 70px; padding: 0 26px; background: #fff; border-bottom: 1px solid #e8edf3; }
+.react-topbar .search { flex: 1; max-width: 520px; }
+.react-topbar .workspace-picker { min-width: 210px; }
+.brand img { object-fit: contain; }
+.nav-button { width: 100%; display: flex; align-items: center; gap: 10px; border: 0; background: transparent; text-align: left; }
+.nav-button.active { background: #e8f1ff; color: #1769d2; }
+.subtle { color: #748196; font-size: 13px; }
+.grid-two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, .7fr); gap: 16px; }
+.agent-row { flex-wrap: wrap; }
+.conversation-shell-react { display: grid; grid-template-columns: 260px minmax(0, 1fr) 300px; gap: 1px; min-height: 620px; background: #e5eaf0; border: 1px solid #e5eaf0; }
+.conversation-shell-react > * { background: #fff; min-width: 0; }
+.conversation-list-react { padding: 14px; overflow: auto; }
+.conversation-main-react { display: flex; flex-direction: column; }
+.conversation-messages { flex: 1; overflow: auto; padding: 18px 22px; }
+.message { max-width: 82%; margin: 0 0 14px; padding: 12px 14px; border: 1px solid #e4e9ef; border-radius: 7px; background: #fff; }
+.message.user { margin-left: auto; background: #eaf3ff; border-color: #cfe2fb; }
+.message-role { display: block; margin-bottom: 5px; color: #6d7b8d; font-size: 11px; text-transform: uppercase; }
+.conversation-compose { padding: 14px; border-top: 1px solid #e5eaf0; }
+.conversation-compose textarea { min-height: 72px; resize: vertical; }
+.conversation-detail-react { padding: 16px; overflow: auto; }
+.list-button { width: 100%; padding: 11px; border: 1px solid transparent; border-radius: 6px; background: transparent; text-align: left; }
+.list-button:hover, .list-button.selected { background: #f0f5fb; border-color: #d8e5f4; }
+.task-shell-react { display: grid; grid-template-columns: 280px minmax(0, 1fr) 300px; gap: 16px; align-items: start; }
+.task-list-react { display: flex; flex-direction: column; gap: 5px; }
+.task-list-row-react { display: flex; gap: 8px; align-items: center; width: 100%; border: 1px solid transparent; background: #fff; padding: 11px; border-radius: 6px; text-align: left; }
+.task-list-row-react.selected { border-color: #cfe0f4; background: #f0f6fd; }
+.task-list-row-react .queue-main { flex: 1; min-width: 0; }
+.task-node-react { border-left: 3px solid #b8c9dc; padding: 10px 13px; margin: 10px 0; background: #fff; }
+.task-node-react.running { border-left-color: #2c7be5; }
+.task-node-react.completed { border-left-color: #2d9b65; }
+.task-node-react.failed, .task-node-react.blocked { border-left-color: #d45454; }
+.task-node-react pre { overflow: auto; margin: 8px 0 0; padding: 10px; background: #f6f8fa; font-size: 12px; }
+.approval-row { display: flex; gap: 10px; align-items: center; margin: 12px 0; padding: 12px; border: 1px solid #edd7a1; background: #fff8e6; }
+.approval-row > div { flex: 1; min-width: 0; }
+.approval-row p { margin: 4px 0 0; color: #7d6a45; font-size: 13px; }
+.event-list { max-height: 180px; overflow: auto; border-top: 1px solid #e5eaf0; }
+.event-row { display: flex; gap: 12px; align-items: center; padding: 7px 0; border-bottom: 1px solid #edf1f5; font-size: 12px; }
+.event-row span { color: #8793a2; min-width: 150px; }
+.artifact-import { padding: 10px; margin-bottom: 12px; border: 1px dashed #cbd6e2; background: #f8fafc; }
+.artifact-import .btn { align-self: flex-start; }
+.permission-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; font-size: 12px; }
+.terminal-output { min-height: 170px; max-height: 320px; overflow: auto; margin: 0 0 12px; padding: 12px; color: #dbeafe; background: #172231; white-space: pre-wrap; }
+.table-wrap { overflow: auto; }
+.empty-state { padding: 28px; border: 1px dashed #cbd6e2; color: #7b8795; text-align: center; background: #fff; }
+.selected-row { background: #edf5ff; }
+@media (max-width: 1050px) { .react-layout { grid-template-columns: 205px minmax(0, 1fr); } .conversation-shell-react, .task-shell-react { grid-template-columns: 220px minmax(0, 1fr); } .conversation-detail-react, .task-create-react { display: none; } }
+@media (max-width: 760px) { .react-layout { display: block; } .react-sidebar { min-height: auto; } .react-sidebar .nav-scroll { max-height: 190px; } .react-topbar { flex-wrap: wrap; padding: 12px; } .react-topbar .search { order: 3; flex-basis: 100%; } .react-content { padding: 16px; } .conversation-shell-react, .task-shell-react, .grid-two { display: block; } .conversation-list-react { max-height: 180px; } }

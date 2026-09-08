@@ -2,382 +2,211 @@
 
 [English](README.md) | 中文
 
-IoTHunter 是一个面向物联网安全研究的能力隔离型多智能体研究系统。它把研究过程拆成可审计的控制平面、智能体、能力模块和工具运行环境，以漏洞发现（Finding）和证据（Evidence）作为事实中心，支持任务恢复、最小权限、人工审批和报告生成。
+IoTHunter 是面向授权 IoT 安全研究的本地桌面客户端。它由 Go 控制平面、本地 AI 运行时、隔离的 Python 能力工作进程、受控 Tool Gateway，以及带会话和租约的外设管理器组成。系统记录完整链路：
 
-这个仓库是一个可以直接运行的核心最小版本，不依赖 PostgreSQL、Redis、Docker 或大模型服务。默认使用本地 JSON 状态文件，适合快速试用、开发能力插件和在 GitHub 上公开讨论架构。生产部署可以把同样的接口替换为 PostgreSQL、对象存储、容器沙箱和远程工作进程。
+```text
+工作区 -> 目标设备 -> 对话 -> 任务 -> 智能体 -> 能力
+      -> 工具 / Worker / 外设 -> 证据 / 工件
+      -> Finding -> 验证 -> 报告 / 知识
+```
 
-![IoTHunter 架构图](IoTHunterArch.png)
+项目实现依据 `IoTHunter_Harness_Architecture_Design_v2.1_Peripheral_Fixed.md`：
 
-## 设计目标
+```text
+Wails + React/TypeScript
+          |
+      本地 HTTP API / Wails Binding
+          |
+Go 控制平面（Commander、Scheduler、Task Engine、Event Bus）
+          |
+能力注册中心 -> Tool Gateway / Python Worker
+          |
+外设管理器 -> 串口、TCP/SCPI 及其他驱动适配器
+          |
+SQLite 状态库 + 工件 + 审计事件
+```
 
-架构文档里的核心闭环在 MVP 中已经可运行：
+## 已实现功能
 
-~~~text
-Target → Task → Agent → Capability → Tool/Worker → Evidence → Finding → Report
-~~~
+### 控制平面
 
-边界保持为：
+- Go 1.22 模块，包含 Workspace、Target、Task、Agent、Capability、Tool、Finding、Evidence、Artifact、Approval、Event 和 Audit 模型。
+- 默认使用 SQLite（`.iothunter/state.db`），同时兼容旧 JSON 存储。
+- 任务支持排队、分配、运行、暂停、阻塞、失败、完成和取消；暂停与取消会终止当前 Runtime 或 Worker 进程。
+- 一个计划对应一个有序 Task；每个能力都是可追踪节点，并将结构化结果传给后续节点，最终汇总到同一个 Finding。
+- 重试会依据任务声明的能力重新检查目标、权限和租约后再调度。
+- 任务详情和事件流包含调度节点、AgentRun、CapabilityRun、ToolRun、节点输出和最终总结。
+- Finding 状态机、质量门、审批队列和 Markdown SITREP 报告。
+- 创建工作区时会初始化文档规定的 `targets/`、`evidence/`、`artifacts/`、`tasks/`、`peripherals/`、`logs/`、`sitrep/` 目录，并生成 `manifest.yaml`。
+- 模型注册表和 Prompt 注册表会持久化到 SQLite；每个 Prompt 版本保存 SHA-256 摘要，并可按名称激活。
 
-~~~text
-Agent       智能体，负责理解、决策和评估
-Capability  能力模块，负责提供可测试、可复用的专业能力
-Tool        工具，负责具体执行
-System      系统，负责调度、权限、状态、审计和恢复
-~~~
+### 智能体和运行时
 
-关键原则：
+- 自动发现 Claude Code（`claude`）、Codex CLI（`codex`）、Grok CLI（`grok`）和 Kiro CLI（`kiro-cli`）。
+- 使用有超时和输出上限的非交互进程会话。运行时可以绑定到 Agent，并在能力步骤前真实执行。
+- 页面只展示可执行文件路径、版本和状态，不返回凭据。
 
-- Finding 是研究事实的主对象，Evidence 是每个结论的来源。
-- Agent 不直接运行 shell、修改数据库或操作设备，只能请求 Capability。
-- Capability 有输入输出契约和权限声明，工具和工作进程通过统一请求模型接入。
-- Finding 和 Task 都有显式状态机，非法跳转会被拒绝。
-- 设备或破坏性权限自动进入 Approval 队列，批准后任务恢复。
-- 每个关键动作写入 Event 和只追加的 Audit Log。
-- 数据模型不绑定模型供应商，后续可以接 OpenAI-compatible、Anthropic、本地模型或自定义 HTTP 服务。
+### 能力和工具
 
-## 当前功能
+- 能力注册中心覆盖固件、二进制、协议、配置、验证、知识和外设类别。
+- `capability-workers/knowledge/worker.py` 已实现固件镜像元数据、SHA-256、ZIP/TAR 目录读取、二进制格式识别、字符串检索、配置风险检查、协议解析、路由提取，以及污点、CVSS、Fuzz、仿真、数据包、PoC 和知识检索的结构化结果。
+- Worker 支持有边界的 ZIP/TAR 固件解包、基于图的污点可达性分析、CVSS 计算、Fuzz 种子生成、数据包生成和 PoC 校验，输出会保存为可追踪工件。
+- `binary.decompile` 会通过 Tool Gateway 调用主机上的 `objdump`，并将有大小限制的反汇编文本保存为工件。
+- Go Tool Gateway 只执行已注册的可执行文件，使用参数数组、超时、输出上限和权限校验。系统会自动注册主机上可用的 `file` 和 `strings`。
+- Tool 定义支持 `host`、`docker` 和 `podman` 隔离模式。容器只挂载任务工作目录，并默认关闭网络。
+- 文件能力会通过 Gateway 记录受限的主机工具观察，再交给 Python Worker 分析；Finding 保留工件哈希和证据来源。
 
-Go 控制服务：
+### 外设平面
 
-- Workspace、Target、Task、Finding、Evidence、Artifact、Approval、Event、Audit Log 数据模型。
-- JSON 文件持久化，原子写入，进程内并发保护。
-- Capability Registry 和内置能力：target.fingerprint 被动指纹、finding.gate 质量门、report.generate Markdown 报告。
-- 调度器和工作进程池，默认四个并发槽位，可配置。
-- 权限检查、人工审批、任务阻塞与批准后恢复。
-- Finding / Task 状态机和审计事件。
-- REST 接口和命令行入口。
-- 可重复运行的演示程序。
+- 使用 `go.bug.st/serial` 连接真实 UART/USB 串口。
+- TCP 适配器支持显式 host:port 和 SCPI 类仪器，外设类型可以使用 `tcp`、`scpi`、`power`、`scope`。
+- 电源测量、电压/电流设置和输出控制都通过同一个 SCPI 会话执行；设置动作必须先配置 `max_voltage`/`max_current`，并经过人工审批。
+- 支持发现、连接、断开、独占或只读共享租约、过期 Session、配置 Schema 和遥测记录。
+- 遥测既可以查询历史记录，也可以通过 `/api/v1/peripheral-sessions/{id}/telemetry/stream` 订阅 SSE 实时流。
+- `identity`、`read`、`write`、`drain` 命令由同一个 Manager 提供给 UI、HTTP、gRPC 和 Agent 能力。
+- 已接入架构文档中的外设能力：`serial.open/configure`、`power.read/measure/set_voltage/set_current/output/cycle`、`scope.configure/capture/measure`、`jlink.attach/reset/halt/read_memory`、`bluetooth.scan/capture` 和 `packet.capture`。
+- 只读共享 Session 不能修改配置或写入；物理或破坏性能力在执行前进入审批队列，普通只读观测仍通过同一租约路径执行。
 
-Python 能力工作进程：
+## 桌面客户端
 
-- capability-workers/knowledge/worker.py 是无依赖的按行分隔 JSON 工作进程示例。
-- 一行 JSON 请求对应一行 JSON 响应，可放入容器或远程工作进程。
-- 该协议可以承载固件、二进制、协议、模糊测试、仿真等专业能力。
+主客户端使用 Wails v2 + React/TypeScript。Electron 保留为兼容和开发承载，并启动同一个 Go sidecar。
 
-## 快速开始
+侧边栏对应架构中的 4 组 13 个入口：
 
-要求 Go 1.22 及以上版本、Node.js 20 及以上版本和 npm。Python 工作进程只需要 Python 3.10 及以上版本。
-
-~~~bash
-go test ./...
-go run ./cmd/iothunter demo --data .iothunter/state.json
-~~~
-
-演示程序会创建一个示例工作空间和目标，异步执行被动侦察，最后打印任务、发现和报告路径。报告会写到 .iothunter/reports/<workspace-id>.md。
-
-启动 API：
-
-~~~bash
-go run ./cmd/iothunter serve --addr :8080 --data .iothunter/state.json
-~~~
-
-## 原生桌面客户端
-
-IoTHunter 使用原生 Electron 桌面客户端，Go 控制平面作为本地 sidecar 进程运行。启动后会打开独立的应用窗口，不会跳转浏览器。客户端采用响应式 MultiCa 风格，根据对话、任务、目标设备、智能体、外设、采集记录、漏洞和配置功能切换布局。顶部可以切换中文和英文，打包后的应用图标使用 `logo2.png`。
-
-~~~bash
-make build
-npm --prefix desktop install
-npm --prefix desktop start
-~~~
-
-桌面客户端会自动启动 loopback 地址上的 `bin/iothunter serve`，并将状态文件存储到当前平台的应用数据目录。如果已有 API 服务，可以设置 `IOTHUNTER_API_URL`，或者执行 `./bin/iothunter desktop --api-url http://127.0.0.1:8080` 连接它。
-
-桌面侧边栏固定为四个分组、十三个入口：
-
-~~~text
+```text
 工作台：对话管理、任务管理、设备管理、智能体管理
 外设管理：外设连接、外设配置、协议分析
 漏洞管理：漏洞列表、漏洞知识库
 配置：运行时、Skills、能力中心、设置
-~~~
+```
 
-对话记录和实际执行的任务分开管理；设备管理只维护被研究的 IoT 目标设备，外设管理维护串口、电源、示波器、J-Link、蓝牙分析仪等实验仪器。协议分析页面分别展示原始采集、解析结果和研究判断。不同功能使用不同栏数：对话使用内部三栏工作区，任务和漏洞页面按需显示队列与检查器，外设配置根据设备类型生成参数，注册表使用单一主画布。
+界面默认显示英文，可在顶部切换中文。工作区下拉栏支持新建工作区。任务页面可以先把固件或二进制导入工作区工件目录，再提交多步骤分析计划。对话、任务、节点输出、任务事件、运行时、目标设备、外设租约和 Finding 都来自同一个本地控制平面。
 
-控制台还覆盖架构中的控制面对象：Agent 池、Skill 工作流、Evidence 和 Artifact 记录、Approval 队列、Event 流、Audit Log、CapabilityRun、ToolRun、GateDecision 和 Knowledge。Finding Gate，以及 Task 的暂停、恢复、重试和取消操作，都可以通过接口执行并在工作空间视图中查看。
+## 环境要求
 
-面向 IoT 的聚合接口包括 `/api/v1/iot/summary`、`/api/v1/iot/devices`、`/api/v1/iot/vulnerabilities` 和 `/api/v1/iot/artifacts`。这些接口为集成程序提供设备中心视图，底层记录仍然遵循工作区和授权边界。
+- Go 1.22 或更高版本
+- Node.js 20 或更高版本以及 npm
+- Python 3.10 或更高版本（执行 Python 能力时需要）
+- Linux 编译 Wails 还需要 WebKitGTK 开发包：
 
-### 主机本地运行时
+```bash
+sudo apt install libwebkit2gtk-4.1-dev libsoup-3.0-dev
+```
 
-桌面客户端会发现主机上已经安装的 AI 命令行运行时，并允许为每个 Agent 关联一个运行时。当前支持 Claude Code（`claude`）、Codex CLI（`codex`）、Grok CLI（`grok`）和 Kiro CLI（`kiro-cli`），会检查主机 `PATH` 以及常见的用户目录。运行时页面会显示可执行文件路径、版本、提供商、可用状态和最近检查时间。点击“检查”只执行短时的 `--version` 探测；点击“探测帮助”只读取 `--help` 输出，不会启动交互会话，也不会发送研究提示词。
+内置能力不依赖 PostgreSQL、Redis、Docker 或外部大模型服务。只有在主机安装并绑定 Agent 后，才会调用本地 AI Runtime。
 
-对应的 API 如下：
+## 快速开始
 
-~~~bash
-curl http://127.0.0.1:8080/api/v1/runtimes
-curl -X POST http://127.0.0.1:8080/api/v1/runtimes/codex/check
-curl -X POST http://127.0.0.1:8080/api/v1/runtimes/codex/probe
-curl -X POST http://127.0.0.1:8080/api/v1/agents/commander-default \
-  -H 'Content-Type: application/json' \
-  -d '{"runtime_id":"codex"}'
-~~~
-
-运行时发现不会读取或返回 API key、token 和提示词，也不会返回超出长度限制的命令输出。认证状态在加入各提供商的登录检查前显示为 `unknown`；关联运行时只会把选定的本地可执行文件记录到 Agent 配置中。
-
-编译 Go 控制服务和桌面客户端：
-
-~~~bash
+```bash
 make build
-./bin/iothunter client --server http://127.0.0.1:8080 health
-./bin/iothunter client --server http://127.0.0.1:8080 capabilities
-make build-all
-~~~
+./bin/iothunter serve --addr 127.0.0.1:18080 --grpc-addr 127.0.0.1:19090 --data .iothunter/state.db
+```
 
-make build 会生成当前平台的 bin/iothunter；make build-all 会生成 Linux amd64/arm64、macOS amd64/arm64 和 Windows amd64 客户端。客户端和服务端使用同一个二进制，通过第一个命令参数区分运行模式。
+Electron 兼容客户端：
 
-检查健康状态和能力列表：
+```bash
+make client-install
+npm --prefix desktop start
+```
 
-~~~bash
-curl http://127.0.0.1:8080/healthz
-curl http://127.0.0.1:8080/api/v1/capabilities
-curl http://127.0.0.1:8080/api/v1/tools
-~~~
+原生 Wails 客户端：
 
-## 接口示例
+```bash
+make wails-build-linux
+./bin/iothunter-wails
+```
 
-创建工作空间：
-
-~~~bash
-curl -X POST http://127.0.0.1:8080/api/v1/workspaces \
-  -H 'Content-Type: application/json' \
-  -d '{"name":"router-research","owner":"alice","description":"authorized lab"}'
-~~~
-
-创建目标：
-
-~~~bash
-curl -X POST http://127.0.0.1:8080/api/v1/workspaces/W-xxxx/targets \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "name":"lab-router",
-    "vendor":"ExampleVendor",
-    "model":"Router X1",
-    "address":"192.0.2.10",
-    "transport":"http",
-    "authorized":true
-  }'
-~~~
-
-启动研究任务：
-
-~~~bash
-curl -X POST http://127.0.0.1:8080/api/v1/workspaces/W-xxxx/run \
-  -H 'Content-Type: application/json' \
-  -d '{"target_id":"T-xxxx"}'
-~~~
-
-查看工作空间聚合视图、任务、发现和报告：
-
-~~~bash
-curl http://127.0.0.1:8080/api/v1/workspaces/W-xxxx
-curl http://127.0.0.1:8080/api/v1/tasks/T-xxxx
-curl http://127.0.0.1:8080/api/v1/findings/F-xxxx
-curl http://127.0.0.1:8080/api/v1/workspaces/W-xxxx/report
-~~~
-
-Finding 状态只能按状态机跳转。例如 Candidate 可以进入 Analyzing：
-
-~~~bash
-curl -X POST http://127.0.0.1:8080/api/v1/findings/F-xxxx \
-  -H 'Content-Type: application/json' \
-  -d '{"state":"analyzing"}'
-~~~
-
-Approval 接口：
-
-~~~bash
-curl http://127.0.0.1:8080/api/v1/approvals
-curl -X POST http://127.0.0.1:8080/api/v1/approvals/APR-xxxx \
-  -H 'Content-Type: application/json' \
-  -d '{"status":"approved","actor":"alice"}'
-~~~
-
-Commander 计划和质量门：
-
-~~~bash
-curl -X POST http://127.0.0.1:8080/api/v1/workspaces/W-xxxx/plan \
-  -H 'Content-Type: application/json' \
-  -d '{"target_id":"T-xxxx","objective":"离线分析","capabilities":["target.fingerprint","web.route_discovery"]}'
-
-curl -X POST http://127.0.0.1:8080/api/v1/findings/F-xxxx/gate \
-  -H 'Content-Type: application/json' \
-  -d '{"gate":"finding"}'
-~~~
-
-Agent、Skill、Knowledge、Event 和 Audit 接口分别位于 `/api/v1/agents`、`/api/v1/skills`、`/api/v1/knowledge`、`/api/v1/events` 和 `/api/v1/audit`。后续可以使用同一套结构化请求/结果模型替换内置离线能力。
-
-## 对话和外设接口
-
-对话和外设接口按工作区管理：
-
-~~~bash
-curl -X POST http://127.0.0.1:8080/api/v1/workspaces/W-xxxx/conversations \
-  -H 'Content-Type: application/json' \
-  -d '{"title":"启动日志分析","content":"检查 UART 启动序列"}'
-curl http://127.0.0.1:8080/api/v1/workspaces/W-xxxx
-curl -X POST http://127.0.0.1:8080/api/v1/workspaces/W-xxxx/peripherals \
-  -H 'Content-Type: application/json' \
-  -d '{"name":"UART 01","kind":"serial","driver":"pyserial","port":"/dev/ttyUSB0"}'
-curl -X POST http://127.0.0.1:8080/api/v1/peripherals/PER-xxxx \
-  -H 'Content-Type: application/json' -d '{"status":"connected"}'
-~~~
-
-外设配置和连接状态分开保存。打开页面不会自动开始采集、回放、供电或执行其他物理操作；这些动作必须由明确的能力请求发起，并经过控制平面的权限检查。
-
-## 数据和目录
-
-默认运行目录：
-
-~~~text
-.iothunter/
-├── state.json
-└── reports/
-~~~
-
-状态文件使用临时文件加 rename 的方式更新。它适用于单进程本地研究和测试，不适合多个 API 实例共享写入；生产环境应替换 Store 实现。
-
-仓库中的对象结构定义：
-
-~~~text
-schemas/task.schema.json
-schemas/finding.schema.json
-~~~
-
-架构设计中的工作空间目录约定仍然适用于生产扩展：
-
-~~~text
-workspace/
-├── targets/
-├── findings/
-├── evidence/
-├── artifacts/
-├── tasks/
-├── capabilities/
-├── knowledge/
-├── skills/
-├── approvals/
-├── logs/
-└── sitrep/
-~~~
-
-## 工作进程协议
-
-工作进程使用按行分隔的 JSON，不依赖特定 RPC 框架。请求示例：
-
-~~~json
-{
-  "request_id": "REQ-1",
-  "task_id": "TASK-1",
-  "agent_id": "analysis-1",
-  "capability_id": "knowledge.search",
-  "objective": "search known patterns",
-  "inputs": {
-    "query": "sprintf",
-    "corpus": ["strcpy", "sprintf", "memcpy"]
-  },
-  "permissions": {
-    "network": false,
-    "filesystem": "workspace-readonly",
-    "device": false,
-    "destructive": false
-  }
-}
-~~~
-
-运行示例工作进程：
-
-~~~bash
-printf '%s\n' '{"request_id":"REQ-1","capability_id":"knowledge.search","inputs":{"query":"sprintf","corpus":["strcpy","sprintf"]}}' \
-  | python3 capability-workers/knowledge/worker.py
-~~~
-
-生产环境建议由工具网关完成以下工作：
-
-1. 校验请求 JSON 和 Capability 结构定义。
-2. 合并 Agent、Task、Capability、Tool 四层权限，取最小集合。
-3. 选择容器、虚拟机或远程工作进程。
-4. 限制 CPU、内存、磁盘、网络、Linux capabilities 和运行时长。
-5. 收集标准输出、标准错误、工件哈希和结构化 Evidence。
-6. 把工具运行、能力运行和结果写入审计日志。
-
-## 状态机
-
-Finding：
-
-~~~text
-Hypothesis → Candidate → Analyzing → ReadyForValidation
-                                      ↓
-                              Validating → Validated
-                                      ↓
-                              Reportable → Reported → KnowledgeCaptured
-~~~
-
-分析不足可以回退到 Candidate，验证失败可以回到 Analyzing 或 Candidate；任何不在允许边上的转换都会返回冲突错误。
-
-Task：
-
-~~~text
-Queued → Assigned → Running → Completed
-                         ├── Failed → Queued
-                         ├── Blocked → Queued
-                         └── Paused → Running
-~~~
-
-## 安全边界
-
-最小版本默认只注册被动、无网络、无设备、非破坏性能力。示例地址 192.0.2.10 是文档保留地址，不代表真实目标。
-
-接入真实设备时，应同时满足：
-
-~~~text
-Target 已授权
-AND Task 允许设备权限
-AND Capability 允许设备权限
-AND Tool 允许设备权限
-AND Device 当前可用并被锁定
-AND 高风险动作已获得人工批准
-~~~
-
-本项目不会替研究者决定授权范围。任何设备验证、压力测试、Flash 写入、配置修改或可能造成持久影响的 PoC，都应在隔离实验室和明确授权下执行。
-
-## 开发
+`make wails-build-linux` 会先构建 Vite 前端，再复制到 Wails 嵌入目录并生成 `bin/iothunter-wails`。Electron 打包会包含 Go sidecar、React 前端、Python Worker 和 `logo2.png`。
 
 常用命令：
 
-~~~bash
-go test ./...
-go vet ./...
-gofmt -w cmd internal
-go run ./cmd/iothunter capabilities
-go run ./cmd/iothunter demo
-~~~
+```bash
+make test
+make vet
+make frontend-build
+make desktop-package
+make desktop-dist
+go run ./cmd/iothunter demo --data .iothunter/state.db
+```
 
-推荐扩展方式：
+## API 链路示例
 
-1. 在 internal/core 中定义 Capability 的输入、输出和 PermissionSet。
-2. 给 Capability 注册一个 CapabilityExecutor，或实现按行分隔 JSON/Python 工作进程。
-3. 在执行器中只使用传入的资源，不从 Agent 输入拼接任意 shell 命令。
-4. 为成功、权限拒绝、超时和结构化输出错误写测试。
-5. 用 Evidence 记录可追溯的结果，用 Artifact 保存大文件并计算 SHA-256。
-6. 通过 Commander/Task 调度能力，不在 HTTP 处理器中直接执行专业工具。
+创建工作区、导入文件并提交有序分析计划：
 
-模型适配器、PostgreSQL、对象存储、SSE/WebSocket、容器沙箱和网页界面是下一阶段的替换点。当前核心接口不把这些基础设施写死，便于渐进式升级。
+```bash
+base=http://127.0.0.1:18080
+workspace=$(curl -fsS -X POST "$base/api/v1/workspaces" \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"router-lab","owner":"local"}')
+workspace_id=$(printf '%s' "$workspace" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p')
+target=$(curl -fsS -X POST "$base/api/v1/workspaces/$workspace_id/targets" \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"fixture-router","vendor":"Example","model":"R1","transport":"offline","authorized":true}')
+target_id=$(printf '%s' "$target" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p')
+artifact=$(curl -fsS -X POST "$base/api/v1/workspaces/$workspace_id/artifacts" \
+  -H 'Content-Type: application/json' \
+  -d '{"path":"/path/to/firmware.bin","type":"firmware"}')
+artifact_id=$(printf '%s' "$artifact" | sed -n 's/.*"artifact_id":"\([^"]*\)".*/\1/p')
+curl -fsS -X POST "$base/api/v1/workspaces/$workspace_id/plan" \
+  -H 'Content-Type: application/json' \
+  -d "{\"target_id\":\"$target_id\",\"objective\":\"inspect firmware\",\"capabilities\":[\"binary.identify\",\"binary.search_string\",\"firmware.config_scan\"],\"inputs\":{\"artifact_id\":\"$artifact_id\",\"query\":\"password\"},\"permissions\":{\"filesystem\":\"workspace-readonly\"}}"
+```
 
-## 从最小版本到生产
+查看任务和实时事件：
 
-建议按架构文档的阶段推进：
+```bash
+curl "$base/api/v1/tasks/TASK-xxxx/detail"
+curl -N "$base/api/v1/tasks/TASK-xxxx/events"
+curl "$base/api/v1/workspaces/$workspace_id/report"
+```
 
-1. IoTHunter 核心：接入真正的智能体运行时、模型适配器和持久化仓库。
-2. 能力隔离：实现工具网关、容器/虚拟机沙箱和远程工作进程。
-3. 验证能力：增加模糊测试、仿真、数据包、设备能力，并接入审批管理器。
-4. 知识与技能：增加厂商画像、历史漏洞、模式、技能和检索。
-5. 平台能力：增加网页界面、SITREP 流式事件、指标、分布式调度和设备管理器。
+任务详情包含调度节点、能力节点、ToolRun、Python Worker 输出、Evidence、Artifact 哈希和 Finding。对话接口传入 `create_task: true` 时，也会进入同一条任务链。
 
-生产系统还应增加身份认证、租户隔离、密钥管理、对象存储、限流、OpenTelemetry、Prometheus、数据库迁移和备份策略。
+## 接口范围
 
-## 许可证与贡献
+| 区域 | 接口 |
+| --- | --- |
+| 健康检查和注册表 | `/healthz`、`/api/v1/capabilities`（查询/注册/测试）、`/api/v1/tools`（查询/注册/运行）、`/api/v1/agents`、`/api/v1/runtimes`、`/api/v1/models`、`/api/v1/prompts`、`/api/v1/skills`（查询/注册/运行）、`/api/v1/knowledge` |
+| 工作区和目标 | `/api/v1/workspaces`、`/api/v1/workspaces/{id}`、`/targets`、`/devices`、`/attachments` |
+| 工件 | `/api/v1/workspaces/{id}/artifacts`（导入和列表） |
+| 协议采集 | `/api/v1/workspaces/{id}/captures`（读取已租约会话并保存原始/解析结果） |
+| 对话 | `/api/v1/conversations`、`/api/v1/conversations/{id}`、`/message`、`/events`（SSE） |
+| 任务 | `/api/v1/workspaces/{id}/plan`、`/run`、`/api/v1/tasks/{id}`、`/detail`、`/events`、`/pause`、`/resume`、`/retry`、`/cancel` |
+| Finding | `/api/v1/findings/{id}`、`/evidence`、`/validate`、`/gate` |
+| 外设 | `/api/v1/peripherals/discover`、`/connect`、`/api/v1/peripheral-sessions`、`/config`、`/invoke`、`/telemetry`、`/telemetry/stream`（SSE）、`/api/v1/telemetry`（持久化查询） |
+| IoT 投影 | `/api/v1/iot/summary`、`/devices`、`/peripherals`、`/vulnerabilities`、`/artifacts` |
+| 内部 RPC | `proto/` 中定义的 gRPC `CapabilityWorker.Execute` 和 `PeripheralService.Invoke` |
 
-项目使用 MIT 许可证，见 LICENSE。欢迎通过 Issue 和 Pull Request 讨论新的能力模块、工作进程、数据模型和实验方法。提交代码前请运行 go test ./... 和 go vet ./...。
+## 目录结构
 
-安全问题请不要公开发布可直接攻击真实设备的细节；请先通过私下渠道联系维护者，并说明受影响版本、复现前提和修复建议。
+```text
+cmd/iothunter/             CLI 和服务入口
+internal/core/              Go 领域模型、Store、Engine、REST API
+internal/tools/             Tool Gateway
+internal/worker/            Python Worker 进程监管
+internal/peripherals/       串口/TCP 适配器、Session、Lease
+internal/rpc/               gRPC 服务
+proto/                      Protobuf 契约
+gen/proto/                  生成的 Go Protobuf 绑定
+capability-workers/         Python 能力 Worker
+desktop/frontend/           React + TypeScript 客户端
+desktop/wails/              Wails v2 原生客户端
+desktop/renderer/           Electron 兼容渲染器
+schemas/                    Task 和 Finding JSON Schema
+```
+
+## 扩展开发
+
+新增能力时，定义 ID、版本、输入输出 Schema 和最小权限，注册 Go Executor 或 Worker，实现资源边界校验，保存 Evidence/Artifact 来源，并为成功、拒绝、超时和错误输出添加测试。Agent 只能请求 Capability，不能直接打开文件、执行 shell、连接网络或操作外设。
+
+新增外设时，实现 `internal/peripherals` 中的 `Adapter` 和 `Handle` 接口，向 Manager 注册，提供配置 Schema，并让每个命令返回结构化遥测。UI 和 Agent 能力都必须继续通过 Manager，以保持租约和安全限制一致。
+
+## 安全模型
+
+控制平面会取 Agent、Task、Capability 和 Tool 四层权限的交集。只读设备观测可以直接执行，物理或破坏性变更需要人工 Approval 和设备硬限制。工具使用已注册可执行文件和参数数组，不经过 shell；Worker 输出有大小限制并按结构化 JSON 解码；外设句柄只存在于有过期时间的 Manager Session 中，只读共享租约不能写入。
+
+网络、物理设备和破坏性验证应在隔离实验环境中配置明确的授权范围。应用会记录权限决定和证据链，不会根据地址或型号自动推断授权。
+
+## 许可证
+
+IoTHunter 使用 MIT License，详见 [LICENSE](LICENSE)。

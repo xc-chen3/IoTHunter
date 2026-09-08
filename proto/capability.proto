@@ -1,0 +1,41 @@
+syntax = "proto3";
+
+package iothunter.v1;
+option go_package = "github.com/iothunter/iothunter/gen/proto;iothunterv1";
+
+message PermissionSet {
+  bool network = 1;
+  string filesystem = 2;
+  bool device = 3;
+  bool destructive = 4;
+}
+
+message Budget {
+  int32 max_runtime_seconds = 1;
+  int32 max_tool_calls = 2;
+  int32 max_tokens = 3;
+}
+
+message CapabilityRequest {
+  string request_id = 1;
+  string task_id = 2;
+  string agent_id = 3;
+  string capability_id = 4;
+  string objective = 5;
+  bytes inputs_json = 6;
+  PermissionSet permissions = 7;
+  Budget budget = 8;
+}
+
+message CapabilityResult {
+  string request_id = 1;
+  string capability_id = 2;
+  string status = 3;
+  string summary = 4;
+  bytes result_json = 5;
+  string error = 6;
+}
+
+service CapabilityWorker {
+  rpc Execute(CapabilityRequest) returns (CapabilityResult);
+}

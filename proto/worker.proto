@@ -1,0 +1,7 @@
+syntax = "proto3";
+
+package iothunter.v1;
+option go_package = "github.com/iothunter/iothunter/gen/proto;iothunterv1";
+
+import "capability.proto";
+import "peripheral.proto";

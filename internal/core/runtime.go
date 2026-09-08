@@ -101,6 +101,70 @@ func probeLocalRuntime(ctx context.Context, id string) (LocalRuntime, string, er
 	return runtime, trimOutput(help, 4000), nil
 }
 
+// RunLocalRuntime executes one explicitly requested, non-interactive prompt
+// against a known local CLI. No shell is involved and output is bounded before
+// it is returned to the control plane.
+func RunLocalRuntime(ctx context.Context, id, prompt string) RuntimeResult {
+	started := now()
+	result := RuntimeResult{RuntimeID: id, Status: "failed", StartedAt: started}
+	finish := func() RuntimeResult {
+		completed := now()
+		result.CompletedAt = &completed
+		return result
+	}
+	prompt = strings.TrimSpace(prompt)
+	if prompt == "" {
+		result.Error = "prompt is required"
+		return finish()
+	}
+	spec, ok := localRuntimeSpec(id)
+	if !ok {
+		result.Error = fmt.Sprintf("unknown runtime %q", id)
+		return finish()
+	}
+	path := runtimePath(spec)
+	if path == "" {
+		result.Error = fmt.Sprintf("%s is not installed", spec.name)
+		return finish()
+	}
+	runCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(runCtx, path, runtimePromptArgs(id, prompt)...)
+	cmd.Env = os.Environ()
+	output, err := cmd.CombinedOutput()
+	result.Output = trimOutput(string(output), 64<<10)
+	if runCtx.Err() != nil {
+		result.Error = runCtx.Err().Error()
+		return finish()
+	}
+	if err != nil {
+		result.Error = safeRuntimeError(err)
+		if result.Output != "" {
+			result.Error = trimOutput(result.Error+": "+firstOutputLine(result.Output), 500)
+		}
+		return finish()
+	}
+	result.Status = "completed"
+	return finish()
+}
+
+func runtimePromptArgs(id, prompt string) []string {
+	// These are non-interactive modes supported by the corresponding CLIs.
+	// Keep the mapping explicit so user input can never become a shell command.
+	switch id {
+	case "claude":
+		return []string{"-p", prompt}
+	case "codex":
+		return []string{"exec", "--skip-git-repo-check", prompt}
+	case "grok":
+		return []string{"-p", prompt}
+	case "kiro":
+		return []string{"chat", "--no-interactive", prompt}
+	default:
+		return []string{prompt}
+	}
+}
+
 func runRuntimeCommand(parent context.Context, path string, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(parent, 4*time.Second)
 	defer cancel()

@@ -2,314 +2,217 @@
 
 English | [中文](README.zh-CN.md)
 
-IoTHunter is a capability-isolated, multi-agent research system for IoT security work. It separates the control plane, agents, capabilities, and tool runtimes, with Finding and Evidence as the source of truth. The system supports recoverable tasks, least-privilege execution, human approval, audit logs, and report generation.
+IoTHunter is a local desktop application for authorized IoT security research. It combines a Go control plane, replaceable local AI runtimes, isolated Python capability workers, an allow-listed Tool Gateway, and a peripheral manager with sessions and leases. The application records the complete research chain:
 
-This repository contains a runnable core MVP. It does not require PostgreSQL, Redis, Docker, or an LLM service. The default store is a local JSON file, which makes the project easy to try, extend, and publish on GitHub. Production deployments can replace the store with PostgreSQL, add object storage, and run capabilities inside containers or remote workers.
+```text
+Workspace -> Target -> Conversation -> Task -> Agent -> Capability
+          -> Tool / Worker / Peripheral -> Evidence / Artifact
+          -> Finding -> Validation -> Report / Knowledge
+```
 
-![IoTHunter architecture](IoTHunterArch.png)
+The repository follows the architecture in `IoTHunter_Harness_Architecture_Design_v2.1_Peripheral_Fixed.md`:
 
-## Design
+```text
+Wails + React/TypeScript
+          |
+      local HTTP API / Wails bindings
+          |
+Go Control Plane (Commander, Scheduler, Task Engine, Event Bus)
+          |
+Capability Registry -> Tool Gateway / Python Worker
+          |
+Peripheral Manager -> Serial, TCP/SCPI and additional driver adapters
+          |
+SQLite state + artifacts + audit events
+```
 
-The architecture document's minimum loop is runnable in this MVP:
+## What is implemented
 
-~~~text
-Target -> Task -> Agent -> Capability -> Tool/Worker -> Evidence -> Finding -> Report
-~~~
+### Control plane
 
-The responsibilities are intentionally separated:
+- Go 1.22 module with explicit Workspace, Target, Task, Agent, Capability, Tool, Finding, Evidence, Artifact, Approval, Event and Audit models.
+- SQLite persistence by default (`.iothunter/state.db`) with legacy JSON store compatibility.
+- Cancellable task execution with queued, assigned, running, paused, blocked, failed, completed and cancelled states.
+- A plan is one ordered Task: every requested Capability becomes a node, consumes structured results from prior nodes, and contributes to the same Finding and final summary.
+- Retry starts the task's declared capability after a fresh target, permission and lease check. Pause and cancel terminate the active Runtime or Worker process.
+- Event stream and task detail endpoints expose scheduler nodes, AgentRun, CapabilityRun, ToolRun, output and final summary.
+- Finding state machine, finding/validation quality gates, approval queue and Markdown SITREP reports.
+- Workspaces are initialized with the documented `targets/`, `evidence/`, `artifacts/`, `tasks/`, `peripherals/`, `logs/` and `sitrep/` layout plus a `manifest.yaml`.
+- Model and Prompt registries are persisted in SQLite; Prompt versions carry a SHA-256 digest and can be activated per prompt name.
 
-~~~text
-Agent       understands, decides, and evaluates
-Capability  exposes a reusable, testable specialist function
-Tool        performs the concrete execution
-Control plane controls scheduling, permissions, state, audit, and recovery
-~~~
+### Agent and Runtime integration
 
-Core principles:
+- Local runtime discovery for Claude Code (`claude`), Codex CLI (`codex`), Grok CLI (`grok`) and Kiro CLI (`kiro-cli`).
+- Non-interactive, bounded process sessions. The selected runtime can be bound to an Agent and is executed before the Agent's capability step.
+- Runtime paths and version information are shown without returning credentials.
 
-- Finding is the primary research fact; every conclusion should point to Evidence.
-- Agents do not run arbitrary shell commands, edit the database, or operate devices directly.
-- Capabilities declare input/output contracts and permissions.
-- Finding and Task transitions are explicit state-machine operations.
-- Device and destructive permissions enter an Approval queue and resume only after approval.
-- Important actions produce Event and append-only Audit Log records.
-- Model providers are not hard-coded and can be replaced later.
+### Capability and Tool execution
 
-## Included
+- Capability Registry with software, analysis, validation, knowledge and peripheral entries.
+- Python NDJSON worker at `capability-workers/knowledge/worker.py` implements real offline operations:
+  - firmware image metadata, SHA-256, bounded ZIP/TAR extraction and archive inventory;
+  - binary format identification and printable string search;
+  - configuration review for high-risk keys;
+  - protocol key/value parsing and route discovery;
+  - graph-based taint reachability, CVSS calculation, bounded Fuzz seed generation, packet generation, PoC verification and knowledge results.
+- `binary.decompile` invokes the host `objdump` executable through the Tool Gateway and persists the bounded disassembly as an Artifact.
+- Go Tool Gateway executes only registered binaries with an argument vector, timeout, output limit and filesystem/network/destructive permission checks. `file` and `strings` are registered automatically when available.
+- Tool definitions support `host`, `docker` and `podman` isolation. Container runs mount only the task working directory and default to a network-disabled container.
+- File-backed capabilities run bounded host-tool observations through the Gateway and then receive structured results from the Python Worker. Findings retain the source artifact hash and evidence provenance.
 
-Go control plane:
+### Peripheral plane
 
-- Workspace, Target, Task, Finding, Evidence, Artifact, Approval, Event, and Audit Log models.
-- Atomic JSON-file persistence with in-process concurrency protection.
-- Capability Registry and built-in capabilities: target.fingerprint, finding.gate, and report.generate.
-- Scheduler/worker pool with configurable concurrency.
-- Permission checks, approvals, blocked tasks, and approval-based recovery.
-- Finding and Task state machines.
-- REST API and command-line interface.
-- A repeatable local demo.
+- `go.bug.st/serial` adapter for real UART/USB serial ports.
+- TCP adapter for explicit host:port endpoints and SCPI-style instruments (`tcp`, `scpi`, `power`, `scope` kinds).
+- Power measurement, bounded voltage/current settings and output commands use the same SCPI session. Voltage/current writes require configured `max_voltage`/`max_current` limits and human approval.
+- Discovery, connect/disconnect, exclusive or shared-read leases, expiring sessions, type-specific configuration schemas and telemetry records.
+- Telemetry can be read from history or subscribed to as an SSE stream at `/api/v1/peripheral-sessions/{id}/telemetry/stream`.
+- `identity`, `read`, `write` and `drain` commands use the same Manager for UI, API, gRPC and Agent capability calls.
+- Architecture-level peripheral capabilities include `serial.open/configure`, `power.read/measure/set_voltage/set_current/output/cycle`, `scope.configure/capture/measure`, `jlink.attach/reset/halt/read_memory`, `bluetooth.scan/capture`, and `packet.capture`.
+- Shared-read sessions cannot configure or write. Physical/destructive capability requests enter the approval queue before invocation; read-only observations remain available through the same lease path.
 
-Python worker:
+## Desktop clients
 
-- capability-workers/knowledge/worker.py is a dependency-free NDJSON worker example.
-- One JSON request produces one JSON response, so the worker can run in a container or remote worker.
-- The protocol can carry firmware, binary, protocol, fuzzing, emulation, and knowledge capabilities.
+The primary client is a Wails v2 desktop application with a React/TypeScript UI. The Electron shell remains available as a compatibility/development host and starts the same Go sidecar.
+
+The UI contains the four architecture groups and thirteen entries:
+
+```text
+Workbench: Conversation management, Task management, Device management, Agent management
+Peripheral management: Peripheral connections, Peripheral configuration, Protocol analysis
+Vulnerability management: Vulnerability list, Vulnerability knowledge
+Configuration: Runtime, Skills, Capability center, Settings
+```
+
+The interface defaults to English and switches to Chinese from the top bar. The workspace picker can create a workspace. The task panel can import a firmware or binary into the workspace artifact store before submitting a multi-step plan. Conversation, task, node output, live task events, runtime sessions, target devices, peripheral leases and findings are backed by the same local API.
+
+## Requirements
+
+- Go 1.22 or newer
+- Node.js 20 or newer and npm
+- Python 3.10 or newer for Python capabilities
+- Linux Wails builds additionally require WebKitGTK development packages. On Debian/Ubuntu:
+
+```bash
+sudo apt install libwebkit2gtk-4.1-dev libsoup-3.0-dev
+```
+
+The default built-in capabilities do not require a model service or external database. A local AI runtime is used only when one is installed and bound to an Agent.
 
 ## Quick start
 
-Requirements: Go 1.22 or newer, Node.js 20 or newer, and npm. The example Python worker requires Python 3.10 or newer.
+Run tests, build the Go control plane and start the local API:
 
-~~~bash
-go test ./...
-go run ./cmd/iothunter demo --data .iothunter/state.json
-~~~
-
-The demo creates a Workspace and an authorized example Target, runs passive reconnaissance, creates a Candidate Finding and Evidence, and writes a Markdown report under .iothunter/reports.
-
-Start the API server:
-
-~~~bash
-go run ./cmd/iothunter serve --addr :8080 --data .iothunter/state.json
-~~~
-
-## Native desktop client
-
-IoTHunter is distributed as a native Electron desktop client with a local Go control-plane sidecar. It opens a dedicated application window, not a browser page. The client uses a responsive MultiCa-style shell and switches between focused layouts for conversations, tasks, devices, agents, peripherals, captures, findings, and configuration. Chinese and English can be switched from the top bar, and the bundled application icon is `logo2.png`.
-
-~~~bash
+```bash
 make build
-npm --prefix desktop install
+./bin/iothunter serve --addr 127.0.0.1:18080 --grpc-addr 127.0.0.1:19090 --data .iothunter/state.db
+```
+
+In another terminal, build and start the Electron compatibility client:
+
+```bash
+make client-install
 npm --prefix desktop start
-~~~
+```
 
-The desktop process automatically starts `bin/iothunter serve` on a loopback port and stores state in the platform application-data directory. To connect the client to an already running API, use `IOTHUNTER_API_URL` or `./bin/iothunter desktop --api-url http://127.0.0.1:8080`.
+The native Wails client is built with:
 
-The desktop navigation has four groups and thirteen entries:
+```bash
+make wails-build-linux
+./bin/iothunter-wails
+```
 
-~~~text
-Workbench: Conversation management, Task management, Device management, Agent management
-Peripheral Management: Peripheral connections, Peripheral configuration, Protocol analysis
-Vulnerability Management: Vulnerability list, Vulnerability knowledge
-Configuration: Runtime, Skills, Capability center, Settings
-~~~
+`make wails-build-linux` builds the Vite bundle, copies it into the Wails embed directory and produces `bin/iothunter-wails`. The binary contains the React assets produced by that build. Electron packages include the Go sidecar, React bundle, Python workers and `logo2.png`.
 
-Conversation records are separate from executable Tasks. Target devices are separate from lab peripherals, and protocol analysis distinguishes raw captures, parser output, and research judgement. Layouts adapt to the active feature: conversations use an internal three-pane workspace, task and finding views can show queue and inspector context, peripheral configuration uses type-specific fields, and registries use a focused single canvas.
+Useful commands:
 
-The console also exposes the architecture's control-plane objects: Agent pool, Skill workflows, Evidence and Artifact records, Approval queue, Event stream, Audit Log, CapabilityRun, ToolRun, GateDecision, and Knowledge items. Finding Gate actions and Task pause/resume/retry/cancel operations are available from the API and are reflected in the workspace view.
+```bash
+make test
+make vet
+make frontend-build
+make desktop-package
+make desktop-dist
+go run ./cmd/iothunter demo --data .iothunter/state.db
+```
 
-IoT-specific projections are available at `/api/v1/iot/summary`, `/api/v1/iot/devices`, `/api/v1/iot/peripherals`, `/api/v1/iot/vulnerabilities`, and `/api/v1/iot/artifacts`. They provide device-centric views for integrations while preserving workspace authorization boundaries in the canonical records.
+## End-to-end API example
 
-### Host runtime integration
+Start the server, import an input artifact, then submit an ordered file-backed plan:
 
-The desktop client discovers locally installed AI command-line runtimes and lets you associate one with each Agent. Claude Code (`claude`), Codex CLI (`codex`), Grok CLI (`grok`), and Kiro CLI (`kiro-cli`) are detected from the host `PATH` and common per-user install locations. The Runtime page shows the executable path, version, provider, availability, and the last check time. `Check` runs a short `--version` probe; `Probe help` reads `--help` output only and never starts an interactive session or sends a research prompt.
-
-The API exposes the same integration:
-
-~~~bash
-curl http://127.0.0.1:8080/api/v1/runtimes
-curl -X POST http://127.0.0.1:8080/api/v1/runtimes/codex/check
-curl -X POST http://127.0.0.1:8080/api/v1/runtimes/codex/probe
-curl -X POST http://127.0.0.1:8080/api/v1/agents/commander-default \
+```bash
+base=http://127.0.0.1:18080
+workspace=$(curl -fsS -X POST "$base/api/v1/workspaces" \
   -H 'Content-Type: application/json' \
-  -d '{"runtime_id":"codex"}'
-~~~
-
-Runtime discovery does not read or return API keys, tokens, prompts, or command output beyond a bounded help preview. Authentication is reported as `unknown` until a provider-specific login check is added; binding a runtime only records the selected local executable for the Agent.
-
-Check the service and registries:
-
-~~~bash
-curl http://127.0.0.1:8080/healthz
-curl http://127.0.0.1:8080/api/v1/capabilities
-curl http://127.0.0.1:8080/api/v1/tools
-~~~
-
-## Standalone client
-
-The same binary can run as a server or as a remote CLI client:
-
-~~~bash
-make build
-./bin/iothunter client --server http://127.0.0.1:8080 health
-./bin/iothunter client --server http://127.0.0.1:8080 capabilities
-./bin/iothunter client --server http://127.0.0.1:8080 workspaces
-./bin/iothunter client --server http://127.0.0.1:8080 workspace-create --name router-research --owner alice
-./bin/iothunter client --server http://127.0.0.1:8080 workspace --id W-xxxx
-./bin/iothunter client --server http://127.0.0.1:8080 target-create --workspace W-xxxx --name lab-router --authorized
-./bin/iothunter client --server http://127.0.0.1:8080 run --workspace W-xxxx --target T-xxxx
-~~~
-
-make build creates bin/iothunter for the current platform. make build-all creates Linux amd64/arm64, macOS amd64/arm64, and Windows amd64 binaries under dist.
-
-## API examples
-
-Create a Workspace:
-
-~~~bash
-curl -X POST http://127.0.0.1:8080/api/v1/workspaces \
+  -d '{"name":"router-lab","owner":"local"}')
+workspace_id=$(printf '%s' "$workspace" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p')
+target=$(curl -fsS -X POST "$base/api/v1/workspaces/$workspace_id/targets" \
   -H 'Content-Type: application/json' \
-  -d '{"name":"router-research","owner":"alice","description":"authorized lab"}'
-~~~
-
-Create an authorized Target:
-
-~~~bash
-curl -X POST http://127.0.0.1:8080/api/v1/workspaces/W-xxxx/targets \
+  -d '{"name":"fixture-router","vendor":"Example","model":"R1","transport":"offline","authorized":true}')
+target_id=$(printf '%s' "$target" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p')
+artifact=$(curl -fsS -X POST "$base/api/v1/workspaces/$workspace_id/artifacts" \
   -H 'Content-Type: application/json' \
-  -d '{
-    "name":"lab-router",
-    "vendor":"ExampleVendor",
-    "model":"Router X1",
-    "address":"192.0.2.10",
-    "transport":"http",
-    "authorized":true
-  }'
-~~~
-
-Submit a research run and inspect its result:
-
-~~~bash
-curl -X POST http://127.0.0.1:8080/api/v1/workspaces/W-xxxx/run \
+  -d '{"path":"/path/to/firmware.bin","type":"firmware"}')
+artifact_id=$(printf '%s' "$artifact" | sed -n 's/.*"artifact_id":"\([^"]*\)".*/\1/p')
+curl -fsS -X POST "$base/api/v1/workspaces/$workspace_id/plan" \
   -H 'Content-Type: application/json' \
-  -d '{"target_id":"T-xxxx"}'
-curl http://127.0.0.1:8080/api/v1/workspaces/W-xxxx
-curl http://127.0.0.1:8080/api/v1/tasks/TASK-xxxx
-curl http://127.0.0.1:8080/api/v1/findings/F-xxxx
-curl http://127.0.0.1:8080/api/v1/workspaces/W-xxxx/report
-~~~
+  -d "{\"target_id\":\"$target_id\",\"objective\":\"inspect firmware\",\"capabilities\":[\"binary.identify\",\"binary.search_string\",\"firmware.config_scan\"],\"inputs\":{\"artifact_id\":\"$artifact_id\",\"query\":\"password\"},\"permissions\":{\"filesystem\":\"workspace-readonly\"}}"
+```
 
-Approve a high-risk operation after reviewing it:
+Follow execution:
 
-~~~bash
-curl http://127.0.0.1:8080/api/v1/approvals
-curl -X POST http://127.0.0.1:8080/api/v1/approvals/APR-xxxx \
-  -H 'Content-Type: application/json' \
-  -d '{"status":"approved","actor":"alice"}'
-~~~
+```bash
+curl "$base/api/v1/tasks/TASK-xxxx/detail"
+curl -N "$base/api/v1/tasks/TASK-xxxx/events"
+curl "$base/api/v1/workspaces/$workspace_id/report"
+```
 
-Commander planning and quality gates:
+The task detail contains scheduler and capability nodes, ToolRun records, Python Worker output, Evidence, Artifact hashes and the generated Finding. Conversation messages can create the same task through `POST /api/v1/conversations/{id}/message` with `create_task: true`.
 
-~~~bash
-curl -X POST http://127.0.0.1:8080/api/v1/workspaces/W-xxxx/plan \
-  -H 'Content-Type: application/json' \
-  -d '{"target_id":"T-xxxx","objective":"offline analysis","capabilities":["target.fingerprint","web.route_discovery"]}'
+## API surface
 
-curl -X POST http://127.0.0.1:8080/api/v1/findings/F-xxxx/gate \
-  -H 'Content-Type: application/json' \
-  -d '{"gate":"finding"}'
-~~~
+| Area | Endpoints |
+| --- | --- |
+| Health and registries | `/healthz`, `/api/v1/capabilities` (list/register/test), `/api/v1/tools` (list/register/run), `/api/v1/agents`, `/api/v1/runtimes`, `/api/v1/models`, `/api/v1/prompts`, `/api/v1/skills` (list/register/run), `/api/v1/knowledge` |
+| Workspaces and targets | `/api/v1/workspaces`, `/api/v1/workspaces/{id}`, `/targets`, `/devices`, `/attachments` |
+| Artifacts | `/api/v1/workspaces/{id}/artifacts` (import and list) |
+| Protocol captures | `/api/v1/workspaces/{id}/captures` (read a leased session and persist raw/parsed output) |
+| Conversations | `/api/v1/conversations`, `/api/v1/conversations/{id}`, `/message`, `/events` (SSE) |
+| Tasks | `/api/v1/workspaces/{id}/plan`, `/run`, `/api/v1/tasks/{id}`, `/detail`, `/events`, `/pause`, `/resume`, `/retry`, `/cancel` |
+| Findings | `/api/v1/findings/{id}`, `/evidence`, `/validate`, `/gate` |
+| Peripherals | `/api/v1/peripherals/discover`, `/connect`, `/api/v1/peripheral-sessions`, `/config`, `/invoke`, `/telemetry`, `/telemetry/stream` (SSE), `/api/v1/telemetry` (durable query) |
+| IoT projections | `/api/v1/iot/summary`, `/devices`, `/peripherals`, `/vulnerabilities`, `/artifacts` |
+| Internal RPC | gRPC `CapabilityWorker.Execute` and `PeripheralService.Invoke` from `proto/` |
 
-Registry and knowledge endpoints are available at `/api/v1/agents`, `/api/v1/skills`, `/api/v1/knowledge`, `/api/v1/events`, and `/api/v1/audit`. Capability workers can use the same structured request/result model to replace the built-in offline implementations.
+## Project layout
 
-Conversation and peripheral endpoints are workspace-scoped:
+```text
+cmd/iothunter/             CLI and server entry point
+internal/core/              Go domain model, Store, Engine and REST API
+internal/tools/             Tool Gateway
+internal/worker/            Python worker supervisor
+internal/peripherals/       Serial/TCP adapters, Session and Lease manager
+internal/rpc/               gRPC services
+proto/                      Protobuf contracts
+gen/proto/                  Generated Go protobuf bindings
+capability-workers/         Python capability workers
+desktop/frontend/           React + TypeScript client
+desktop/wails/              Wails v2 native client
+desktop/renderer/           Electron compatibility renderer
+schemas/                    Task and Finding JSON Schemas
+```
 
-~~~bash
-curl -X POST http://127.0.0.1:8080/api/v1/workspaces/W-xxxx/conversations \
-  -H 'Content-Type: application/json' \
-  -d '{"title":"Boot log review","content":"Inspect the UART boot sequence"}'
-curl http://127.0.0.1:8080/api/v1/workspaces/W-xxxx
-curl -X POST http://127.0.0.1:8080/api/v1/workspaces/W-xxxx/peripherals \
-  -H 'Content-Type: application/json' \
-  -d '{"name":"UART 01","kind":"serial","driver":"pyserial","port":"/dev/ttyUSB0"}'
-curl -X POST http://127.0.0.1:8080/api/v1/peripherals/PER-xxxx \
-  -H 'Content-Type: application/json' -d '{"status":"connected"}'
-~~~
+## Extending IoTHunter
 
-Peripheral configuration is stored separately from connection state. Opening a page never starts capture, replay, power output, or another physical action; those actions must be explicit capability requests checked by the control plane.
+To add a capability, define an ID, version, JSON input/output schema and minimum `PermissionSet`; register a Go executor or a Worker implementation; validate resource boundaries; persist Evidence and Artifact provenance; and add tests for success, denial, timeout and malformed output. Agent code must request a Capability rather than opening a file, shell, network socket or peripheral directly.
 
-## Storage and schemas
+To add a peripheral, implement the `Adapter` and `Handle` interfaces in `internal/peripherals`, register it with `Manager`, expose its configuration schema, and make every command return structured telemetry. UI actions and Agent capabilities must continue to use the Manager so leases and safety checks remain consistent.
 
-The default local layout is:
+## Security model
 
-~~~text
-.iothunter/
-├── state.json
-└── reports/
-~~~
+The control plane applies the intersection of Agent, Task, Capability and Tool permissions. Read-only device observations can run directly; physical or destructive changes require a human Approval record and device-specific hard limits. Tool commands use an allow-listed executable plus argument array and never pass user input through a shell. Worker output is bounded and decoded as structured JSON. Peripheral handles are held only by expiring Manager sessions, and shared-read leases cannot write.
 
-The state file is updated through a temporary file and rename. It is suitable for one local API process and tests. Use a database-backed Store for multiple API instances.
+Network, physical-device and destructive validation should be configured for an isolated lab with an explicit authorization scope. The application records the decision and evidence trail; it does not infer authorization from an address or a model name.
 
-JSON Schemas are available at schemas/task.schema.json and schemas/finding.schema.json. The production workspace convention is documented in the architecture document and includes targets, findings, evidence, artifacts, tasks, capabilities, knowledge, skills, approvals, logs, and sitrep directories.
+## License
 
-## Worker protocol
-
-Workers use newline-delimited JSON and do not depend on a particular RPC framework. A request contains request_id, task_id, agent_id, capability_id, objective, inputs, permissions, and budget. A result contains status, summary, evidence, artifacts, confidence, metrics, and an optional error.
-
-Run the example worker:
-
-~~~bash
-printf '%s\n' '{"request_id":"REQ-1","capability_id":"knowledge.search","inputs":{"query":"sprintf","corpus":["strcpy","sprintf"]}}' \
-  | python3 capability-workers/knowledge/worker.py
-~~~
-
-A production Tool Gateway should validate schemas, intersect permissions from Agent/Task/Capability/Tool, select a sandbox or remote worker, enforce CPU/memory/disk/network/runtime limits, collect artifact hashes, and write Tool Run and Capability Run audit records.
-
-## State machines
-
-Finding lifecycle:
-
-~~~text
-Hypothesis -> Candidate -> Analyzing -> ReadyForValidation
-                                      |
-                              Validating -> Validated
-                                      |
-                              Reportable -> Reported -> KnowledgeCaptured
-~~~
-
-Insufficient analysis can return to Candidate. Failed validation can return to Analyzing or Candidate. Invalid transitions are rejected.
-
-Task lifecycle:
-
-~~~text
-Queued -> Assigned -> Running -> Completed
-                         |-> Failed -> Queued
-                         |-> Blocked -> Queued
-                         `-> Paused -> Running
-~~~
-
-## Security boundary
-
-The MVP only registers passive, no-network, no-device, non-destructive capabilities. The example address 192.0.2.10 is reserved for documentation and is not a real target.
-
-For real-device research, require all of the following:
-
-~~~text
-Target is authorized
-AND Task permits device access
-AND Capability permits device access
-AND Tool permits device access
-AND Device is available and locked
-AND a human approved the high-risk action
-~~~
-
-The project does not determine your authorization scope. Run device validation, stress testing, flash writes, configuration changes, and persistent-impact PoCs only in an isolated lab with explicit authorization.
-
-## Development
-
-~~~bash
-go test ./...
-go test -race ./...
-go vet ./...
-gofmt -w cmd internal
-make build
-make build-all
-~~~
-
-To add a capability, define its input/output and PermissionSet, register a CapabilityExecutor or worker, validate every resource boundary, record Evidence and Artifact hashes, and add tests for success, denial, timeout, and malformed output. Route execution through Commander/Task instead of executing specialist tools inside HTTP handlers.
-
-Model adapters, PostgreSQL, object storage, SSE/WebSocket, container sandboxes, distributed workers, and a Web UI are intentional extension points. The core API does not hard-code them.
-
-## Roadmap
-
-1. IoTHunter Core: real Agent Runtime, Model Adapter, and database repositories.
-2. Capability Isolation: Tool Gateway, container/VM sandbox, and remote workers.
-3. Validation: fuzzing, emulation, packet, and device capabilities with Approval Manager.
-4. Knowledge and Skill: vendor profiles, vulnerability patterns, retrieval, and reusable workflows.
-5. Platform: Web UI, streamed SITREP events, metrics, distributed scheduling, and Device Manager.
-
-Production deployments should also add authentication, tenant isolation, secret management, object storage, rate limits, OpenTelemetry, Prometheus, migrations, backups, and retention policies.
-
-## License and contributions
-
-This project is released under the MIT License. See LICENSE. Issues and pull requests for new capabilities, workers, schemas, and research methods are welcome. Run go test ./... and go vet ./... before submitting changes.
-
-For security reports, do not publish directly exploitable real-device details. Contact the maintainers privately with the affected version, reproduction prerequisites, and remediation advice.
+IoTHunter is released under the MIT License. See [LICENSE](LICENSE).

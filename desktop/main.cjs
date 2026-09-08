@@ -25,10 +25,16 @@ function startSidecar() {
   if (process.env.IOTHUNTER_API_URL) return;
   const binary = bundledBinary();
   if (!binary) return;
-  const dataDir = path.join(app.getPath('userData'), 'state.json');
-  serverProcess = spawn(binary, ['serve', '--addr', `127.0.0.1:${API_PORT}`, '--data', dataDir], {
+  const dataDir = path.join(app.getPath('userData'), 'state.db');
+  const workerRootCandidates = [
+    process.resourcesPath,
+    path.join(__dirname, '..'),
+  ];
+  const workerRoot = workerRootCandidates.find((candidate) => existsSync(path.join(candidate, 'capability-workers', 'knowledge', 'worker.py')));
+  serverProcess = spawn(binary, ['serve', '--addr', `127.0.0.1:${API_PORT}`, '--grpc-addr', '127.0.0.1:19090', '--data', dataDir], {
     stdio: 'ignore',
     windowsHide: true,
+    env: workerRoot ? { ...process.env, IOTHUNTER_WORKER_ROOT: workerRoot } : process.env,
   });
   serverProcess.on('error', (error) => console.error('IoTHunter sidecar:', error.message));
 }
@@ -73,7 +79,9 @@ async function createWindow() {
       nodeIntegration: false,
     },
   });
-  window.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+  const reactEntry = path.join(__dirname, 'frontend', 'dist', 'index.html');
+  const legacyEntry = path.join(__dirname, 'renderer', 'index.html');
+  window.loadFile(existsSync(reactEntry) ? reactEntry : legacyEntry);
   return window;
 }
 

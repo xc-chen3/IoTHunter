@@ -1,17 +1,21 @@
 {
   "name": "iothunter-desktop",
   "productName": "IoTHunter",
-  "version": "0.2.0",
+  "version": "0.4.0",
   "private": true,
   "description": "IoTHunter native desktop client",
   "author": "IoTHunter contributors",
   "main": "main.cjs",
   "scripts": {
-    "start": "electron . --no-sandbox",
-    "dev": "electron . --no-sandbox",
+    "start": "npm run frontend:build && electron . --no-sandbox",
+    "dev": "npm run frontend:build && electron . --no-sandbox",
+    "legacy-start": "electron . --no-sandbox",
+    "frontend:install": "npm --prefix frontend install",
+    "frontend:build": "npm --prefix frontend run build",
+    "frontend:typecheck": "npm --prefix frontend run typecheck",
     "test": "node --check main.cjs && node --check preload.cjs && node --check renderer/renderer.js",
-    "package": "electron-builder --dir",
-    "dist": "electron-builder"
+    "package": "npm run frontend:build && electron-builder --dir",
+    "dist": "npm run frontend:build && electron-builder"
   },
   "devDependencies": {
     "electron": "^39.2.6",
@@ -20,8 +24,8 @@
   "build": {
     "appId": "com.iothunter.desktop",
     "productName": "IoTHunter",
-    "files": ["main.cjs", "preload.cjs", "renderer/**/*"],
-    "extraResources": [{ "from": "../bin/iothunter", "to": "iothunter" }, { "from": "../logo2.png", "to": "logo2.png" }],
+    "files": ["main.cjs", "preload.cjs", "renderer/**/*", "frontend/dist/**/*"],
+    "extraResources": [{ "from": "../bin/iothunter", "to": "iothunter" }, { "from": "../logo2.png", "to": "logo2.png" }, { "from": "../capability-workers", "to": "capability-workers" }],
     "directories": { "output": "dist" },
     "linux": { "target": ["AppImage", "deb"], "category": "Development" },
     "mac": { "target": ["dmg"] },

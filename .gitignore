@@ -2,7 +2,11 @@
 bin/
 dist/
 desktop/node_modules/
+desktop/frontend/node_modules/
+desktop/frontend/dist/
 *.tmp
 *.log
 coverage.out
 .DS_Store
+__pycache__/
+*.pyc

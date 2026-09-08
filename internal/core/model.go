@@ -27,15 +27,19 @@ const (
 	TaskFailed    TaskStatus = "failed"
 	TaskBlocked   TaskStatus = "blocked"
 	TaskPaused    TaskStatus = "paused"
+	TaskCancelled TaskStatus = "cancelled"
 )
 
 type Workspace struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	Owner       string    `json:"owner"`
-	Description string    `json:"description,omitempty"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Owner       string `json:"owner"`
+	Description string `json:"description,omitempty"`
+	// Root is the workspace-owned directory used for imported artifacts and
+	// read-only capability inputs. It is optional for legacy state files.
+	Root      string    `json:"root,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 type Target struct {
@@ -52,14 +56,15 @@ type Target struct {
 }
 
 type Agent struct {
-	ID             string `json:"id"`
-	Role           string `json:"role"`
-	ModelProvider  string `json:"model_provider,omitempty"`
-	Model          string `json:"model,omitempty"`
-	RuntimeID      string `json:"runtime_id,omitempty"`
-	Enabled        bool   `json:"enabled"`
-	Status         string `json:"status"`
-	MaxConcurrency int    `json:"max_concurrency"`
+	ID             string        `json:"id"`
+	Role           string        `json:"role"`
+	ModelProvider  string        `json:"model_provider,omitempty"`
+	Model          string        `json:"model,omitempty"`
+	RuntimeID      string        `json:"runtime_id,omitempty"`
+	Enabled        bool          `json:"enabled"`
+	Status         string        `json:"status"`
+	MaxConcurrency int           `json:"max_concurrency"`
+	Permissions    PermissionSet `json:"permissions"`
 }
 
 // LocalRuntime describes a locally installed AI CLI without exposing secrets
@@ -79,10 +84,52 @@ type LocalRuntime struct {
 	Error        string    `json:"error,omitempty"`
 }
 
+// ModelConfig is a user-owned model endpoint. Credentials are referenced by
+// environment variable name and are never persisted in the state payload.
+type ModelConfig struct {
+	ID            string    `json:"id"`
+	Name          string    `json:"name"`
+	Provider      string    `json:"provider"`
+	Model         string    `json:"model"`
+	Endpoint      string    `json:"endpoint,omitempty"`
+	CredentialEnv string    `json:"credential_env,omitempty"`
+	Enabled       bool      `json:"enabled"`
+	Capabilities  []string  `json:"capabilities,omitempty"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
+}
+
+// PromptVersion keeps the exact prompt used by an Agent auditable and
+// reproducible. Content is intentionally stored as plain text, while its
+// digest is calculated by the control plane.
+type PromptVersion struct {
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	Role      string    `json:"role"`
+	Version   string    `json:"version"`
+	Content   string    `json:"content"`
+	SHA256    string    `json:"sha256"`
+	Active    bool      `json:"active"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// RuntimeResult is the bounded result of one non-interactive local CLI
+// invocation. Interactive terminals are intentionally outside this API.
+type RuntimeResult struct {
+	RuntimeID   string     `json:"runtime_id"`
+	Status      string     `json:"status"`
+	Output      string     `json:"output,omitempty"`
+	Error       string     `json:"error,omitempty"`
+	StartedAt   time.Time  `json:"started_at"`
+	CompletedAt *time.Time `json:"completed_at,omitempty"`
+}
+
 type Skill struct {
 	ID          string        `json:"id"`
 	Name        string        `json:"name"`
 	Version     string        `json:"version"`
+	Description string        `json:"description,omitempty"`
+	Enabled     bool          `json:"enabled"`
 	Roles       []string      `json:"roles,omitempty"`
 	Steps       []string      `json:"steps,omitempty"`
 	Outputs     []string      `json:"outputs,omitempty"`
@@ -167,11 +214,14 @@ type Peripheral struct {
 	Name         string         `json:"name"`
 	Kind         string         `json:"kind"`
 	Driver       string         `json:"driver,omitempty"`
+	Transport    string         `json:"transport,omitempty"`
+	Address      string         `json:"address,omitempty"`
 	Port         string         `json:"port,omitempty"`
 	Status       string         `json:"status"`
 	OccupiedBy   string         `json:"occupied_by,omitempty"`
 	Capabilities []string       `json:"capabilities,omitempty"`
 	Config       map[string]any `json:"config,omitempty"`
+	ActiveConfig map[string]any `json:"active_config,omitempty"`
 	SafetyLimits map[string]any `json:"safety_limits,omitempty"`
 	ConnectedAt  *time.Time     `json:"connected_at,omitempty"`
 	UpdatedAt    time.Time      `json:"updated_at"`
@@ -219,6 +269,20 @@ type ProtocolCapture struct {
 	CompletedAt  *time.Time     `json:"completed_at,omitempty"`
 }
 
+// TelemetryRecord is the persisted, queryable projection of a peripheral
+// telemetry sample. Large payloads should be represented by ArtifactID.
+type TelemetryRecord struct {
+	ID           string         `json:"id"`
+	WorkspaceID  string         `json:"workspace_id"`
+	PeripheralID string         `json:"peripheral_id"`
+	SessionID    string         `json:"session_id"`
+	Topic        string         `json:"topic"`
+	Values       map[string]any `json:"values,omitempty"`
+	BytesBase64  string         `json:"bytes_base64,omitempty"`
+	ArtifactID   string         `json:"artifact_id,omitempty"`
+	At           time.Time      `json:"at"`
+}
+
 type PermissionSet struct {
 	Network     bool   `json:"network"`
 	Filesystem  string `json:"filesystem"`
@@ -262,6 +326,9 @@ type Task struct {
 	Summary              string         `json:"summary,omitempty"`
 	Output               map[string]any `json:"output,omitempty"`
 	Nodes                []TaskNode     `json:"nodes,omitempty"`
+	StartedAt            *time.Time     `json:"started_at,omitempty"`
+	CompletedAt          *time.Time     `json:"completed_at,omitempty"`
+	RetryCount           int            `json:"retry_count,omitempty"`
 	CreatedAt            time.Time      `json:"created_at"`
 	UpdatedAt            time.Time      `json:"updated_at"`
 }
@@ -355,6 +422,8 @@ type Tool struct {
 	Name           string        `json:"name"`
 	Category       string        `json:"category"`
 	Execution      string        `json:"execution"`
+	Isolation      string        `json:"isolation,omitempty"`
+	Image          string        `json:"image,omitempty"`
 	Permissions    PermissionSet `json:"permissions"`
 	Runtime        string        `json:"runtime"`
 	TimeoutSeconds int           `json:"timeout_seconds"`
@@ -396,13 +465,14 @@ type Approval struct {
 }
 
 type Event struct {
-	ID          string         `json:"id"`
-	Type        string         `json:"type"`
-	WorkspaceID string         `json:"workspace_id,omitempty"`
-	TaskID      string         `json:"task_id,omitempty"`
-	FindingID   string         `json:"finding_id,omitempty"`
-	Payload     map[string]any `json:"payload,omitempty"`
-	CreatedAt   time.Time      `json:"created_at"`
+	ID             string         `json:"id"`
+	Type           string         `json:"type"`
+	WorkspaceID    string         `json:"workspace_id,omitempty"`
+	ConversationID string         `json:"conversation_id,omitempty"`
+	TaskID         string         `json:"task_id,omitempty"`
+	FindingID      string         `json:"finding_id,omitempty"`
+	Payload        map[string]any `json:"payload,omitempty"`
+	CreatedAt      time.Time      `json:"created_at"`
 }
 
 type AuditLog struct {
@@ -416,28 +486,33 @@ type AuditLog struct {
 }
 
 type State struct {
-	Version        int                `json:"version"`
-	Workspaces     []Workspace        `json:"workspaces"`
-	Targets        []Target           `json:"targets"`
-	Devices        []Device           `json:"devices"`
-	Peripherals    []Peripheral       `json:"peripherals"`
-	Attachments    []DeviceAttachment `json:"attachments"`
-	Conversations  []Conversation     `json:"conversations"`
-	Captures       []ProtocolCapture  `json:"captures"`
-	Agents         []Agent            `json:"agents"`
-	Skills         []Skill            `json:"skills"`
-	Knowledge      []KnowledgeItem    `json:"knowledge"`
-	Tasks          []Task             `json:"tasks"`
-	Findings       []Finding          `json:"findings"`
-	Evidence       []Evidence         `json:"evidence"`
-	Artifacts      []Artifact         `json:"artifacts"`
-	AgentRuns      []AgentRun         `json:"agent_runs"`
-	CapabilityRuns []CapabilityRun    `json:"capability_runs"`
-	ToolRuns       []ToolRun          `json:"tool_runs"`
-	Gates          []GateDecision     `json:"gate_decisions"`
-	Approvals      []Approval         `json:"approvals"`
-	Events         []Event            `json:"events"`
-	Audit          []AuditLog         `json:"audit"`
+	Version                int                `json:"version"`
+	Workspaces             []Workspace        `json:"workspaces"`
+	Targets                []Target           `json:"targets"`
+	Devices                []Device           `json:"devices"`
+	Peripherals            []Peripheral       `json:"peripherals"`
+	Attachments            []DeviceAttachment `json:"attachments"`
+	Conversations          []Conversation     `json:"conversations"`
+	Captures               []ProtocolCapture  `json:"captures"`
+	Telemetry              []TelemetryRecord  `json:"telemetry,omitempty"`
+	Agents                 []Agent            `json:"agents"`
+	Models                 []ModelConfig      `json:"models,omitempty"`
+	Prompts                []PromptVersion    `json:"prompts,omitempty"`
+	Skills                 []Skill            `json:"skills"`
+	Knowledge              []KnowledgeItem    `json:"knowledge"`
+	RegisteredCapabilities []Capability       `json:"registered_capabilities,omitempty"`
+	RegisteredTools        []Tool             `json:"registered_tools,omitempty"`
+	Tasks                  []Task             `json:"tasks"`
+	Findings               []Finding          `json:"findings"`
+	Evidence               []Evidence         `json:"evidence"`
+	Artifacts              []Artifact         `json:"artifacts"`
+	AgentRuns              []AgentRun         `json:"agent_runs"`
+	CapabilityRuns         []CapabilityRun    `json:"capability_runs"`
+	ToolRuns               []ToolRun          `json:"tool_runs"`
+	Gates                  []GateDecision     `json:"gate_decisions"`
+	Approvals              []Approval         `json:"approvals"`
+	Events                 []Event            `json:"events"`
+	Audit                  []AuditLog         `json:"audit"`
 }
 
 func CanTransitionFinding(from, to FindingState) bool {
@@ -468,9 +543,10 @@ func CanTransitionTask(from, to TaskStatus) bool {
 	}
 	allowed := map[TaskStatus][]TaskStatus{
 		TaskQueued:   {TaskAssigned, TaskPaused, TaskCancelled},
-		TaskAssigned: {TaskRunning, TaskQueued, TaskPaused},
-		TaskRunning:  {TaskCompleted, TaskFailed, TaskBlocked, TaskPaused},
-		TaskFailed:   {TaskQueued}, TaskBlocked: {TaskQueued}, TaskPaused: {TaskRunning, TaskQueued},
+		TaskAssigned: {TaskRunning, TaskQueued, TaskPaused, TaskCancelled},
+		TaskRunning:  {TaskCompleted, TaskFailed, TaskBlocked, TaskPaused, TaskCancelled},
+		TaskFailed:   {TaskQueued, TaskCancelled}, TaskBlocked: {TaskQueued, TaskCancelled}, TaskPaused: {TaskRunning, TaskQueued, TaskCancelled},
+		TaskCancelled: {TaskQueued},
 	}
 	for _, candidate := range allowed[from] {
 		if candidate == to {
@@ -479,5 +555,3 @@ func CanTransitionTask(from, to TaskStatus) bool {
 	}
 	return false
 }
-
-const TaskCancelled TaskStatus = "cancelled"

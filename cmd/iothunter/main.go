@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	core "github.com/iothunter/iothunter/internal/core"
+	"github.com/iothunter/iothunter/internal/rpc"
 )
 
 func main() {
@@ -40,7 +42,7 @@ func main() {
 }
 
 func storeFrom(fs *flag.FlagSet) *string {
-	return fs.String("data", ".iothunter/state.json", "state file path")
+	return fs.String("data", ".iothunter/state.db", "SQLite database path (use .json for legacy JSON storage)")
 }
 func openEngine(path string) *core.Engine {
 	s, err := core.NewStore(path)
@@ -52,10 +54,22 @@ func openEngine(path string) *core.Engine {
 
 func serve(args []string) {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
-	addr := fs.String("addr", ":8080", "HTTP listen address")
+	addr := fs.String("addr", "127.0.0.1:8080", "HTTP listen address")
+	grpcAddr := fs.String("grpc-addr", "127.0.0.1:19090", "internal gRPC listen address (empty disables gRPC)")
 	data := storeFrom(fs)
 	_ = fs.Parse(args)
 	e := openEngine(*data)
+	if *grpcAddr != "" {
+		listener, err := net.Listen("tcp", *grpcAddr)
+		if err != nil {
+			log.Fatal(err)
+		}
+		go func() {
+			if err := rpc.Serve(context.Background(), e, listener); err != nil {
+				log.Printf("gRPC server stopped: %v", err)
+			}
+		}()
+	}
 	log.Printf("IoTHunter listening on %s (state: %s)", *addr, *data)
 	if err := http.ListenAndServe(*addr, core.NewAPIServer(e).Handler()); err != nil {
 		log.Fatal(err)
@@ -154,5 +168,5 @@ func filterFindings(in []core.Finding, id string) []core.Finding {
 	return out
 }
 func usage() {
-	fmt.Fprint(os.Stderr, "IoTHunter\n\nUsage:\n  iothunter desktop [--api-url http://127.0.0.1:8080]\n  iothunter serve [--addr :8080] [--data .iothunter/state.json]\n  iothunter demo [--data .iothunter/state.json]\n  iothunter report --workspace W-... [--data .iothunter/state.json]\n  iothunter capabilities\n  iothunter client --server http://127.0.0.1:8080 health|workspaces|run|...\n")
+	fmt.Fprint(os.Stderr, "IoTHunter\n\nUsage:\n  iothunter desktop [--api-url http://127.0.0.1:8080]\n  iothunter serve [--addr 127.0.0.1:8080] [--grpc-addr 127.0.0.1:19090] [--data .iothunter/state.db]\n  iothunter demo [--data .iothunter/state.db]\n  iothunter report --workspace W-... [--data .iothunter/state.db]\n  iothunter capabilities\n  iothunter client --server http://127.0.0.1:8080 health|workspaces|run|...\n")
 }

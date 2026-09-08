@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package iothunter.v1;
+option go_package = "github.com/iothunter/iothunter/gen/proto;iothunterv1";
+
+message PeripheralInvokeRequest {
+  string session_id = 1;
+  string command = 2;
+  bytes args_json = 3;
+}
+
+message PeripheralInvokeResult {
+  string status = 1;
+  bytes data_json = 2;
+  bytes bytes = 3;
+  string error = 4;
+}
+
+service PeripheralService {
+  rpc Invoke(PeripheralInvokeRequest) returns (PeripheralInvokeResult);
+}

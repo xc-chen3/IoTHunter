@@ -149,10 +149,25 @@ function applyLayout() {
   workbench.className='workbench '+mode;
 }
 let liveTimer=null;
+let taskStream=null;
+let taskStreamID=null;
+function closeTaskStream() { if(taskStream){ taskStream.close(); taskStream=null; taskStreamID=null; } }
+function ensureTaskStream() {
+  const selected=state.page==='tasks' && state.taskSelected;
+  if(!selected){ closeTaskStream(); return; }
+  if(taskStream && taskStreamID===selected) return;
+  closeTaskStream();
+  taskStreamID=selected;
+  taskStream=new EventSource(API+'/api/v1/tasks/'+encodeURIComponent(selected)+'/events');
+  taskStream.onmessage=async()=>{ try { await loadWorkspaces(); if(state.page==='tasks'){ $('content').innerHTML=(views.tasks||taskManagement)(); renderQueue(); renderInspector(); localize(); } } catch(error) { toast(error.message,true); } };
+  taskStream.onerror=()=>{ if(taskStream && taskStream.readyState===EventSource.CLOSED) closeTaskStream(); };
+}
 function ensureLiveRefresh() {
   const live=['overview','tasks'].includes(state.page);
   if(!live && liveTimer){ clearInterval(liveTimer); liveTimer=null; }
-  if(live && !liveTimer){ liveTimer=setInterval(async()=>{ try { await loadWorkspaces(); if(!['overview','tasks'].includes(state.page)){clearInterval(liveTimer);liveTimer=null;return;} $('content').innerHTML=(views[state.page]||overview)(); renderQueue(); renderInspector(); localize(); } catch(error) { toast(error.message,true); } },1500); }
+  if(!live){ closeTaskStream(); }
+  if(live && !liveTimer){ liveTimer=setInterval(async()=>{ try { await loadWorkspaces(); if(!['overview','tasks'].includes(state.page)){clearInterval(liveTimer);liveTimer=null;return;} if(state.page==='tasks' && taskStream) return; $('content').innerHTML=(views[state.page]||overview)(); renderQueue(); renderInspector(); localize(); ensureTaskStream(); } catch(error) { toast(error.message,true); } },1500); }
+  ensureTaskStream();
 }
 async function renderPage() { applyLayout(); $('content').innerHTML='<div class="loading">'+t('Loading IoTHunter...')+'</div>'; try { await loadWorkspaces(); if(['overview','tasks','capabilities','tools','agents','runtimes','runtime','models','skills','knowledge','vuln-knowledge','vendors','signatures','protocols','approvals','events','audit'].includes(state.page)) await loadRegistry(); $('content').innerHTML=(views[state.page]||overview)(); renderQueue(); renderInspector(); localize(); ensureLiveRefresh(); } catch(error) { $('content').innerHTML=page('Error','IoTHunter is offline',error.message,empty('Start the local control plane and refresh the client.')); $('connection').textContent=t('Connection error'); document.querySelector('.online-dot').classList.add('offline'); renderQueue(); renderInspector(); localize(); toast(error.message,true); } }
 
