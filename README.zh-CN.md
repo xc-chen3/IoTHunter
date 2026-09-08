@@ -2,15 +2,9 @@
 
 [English](README.md) | 中文
 
-IoTHunter 是面向授权 IoT 安全研究的本地桌面客户端。它由 Go 控制平面、本地 AI 运行时、隔离的 Python 能力工作进程、受控 Tool Gateway，以及带会话和租约的外设管理器组成。系统记录完整链路：
+IoTHunter 是面向 IoT 安全研究的本地桌面平台。它将任务编排、本地 AI 运行时、隔离分析能力、受控工具执行和真实外设会话整合到一个可审计的客户端中。
 
-```text
-工作区 -> 目标设备 -> 对话 -> 任务 -> 智能体 -> 能力
-      -> 工具 / Worker / 外设 -> 证据 / 工件
-      -> Finding -> 验证 -> 报告 / 知识
-```
-
-项目实现依据 `IoTHunter_Harness_Architecture_Design_v2.1_Peripheral_Fixed.md`：
+## 架构
 
 ```text
 Wails + React/TypeScript
@@ -25,6 +19,16 @@ Go 控制平面（Commander、Scheduler、Task Engine、Event Bus）
           |
 SQLite 状态库 + 工件 + 审计事件
 ```
+
+系统记录完整研究链路：
+
+```text
+工作区 -> 目标设备 -> 对话 -> 任务 -> 智能体 -> 能力
+      -> 工具 / Worker / 外设 -> 证据 / 工件
+      -> Finding -> 验证 -> 报告 / 知识
+```
+
+项目实现依据 `IoTHunter_Harness_Architecture_Design_v2.1_Peripheral_Fixed.md`。
 
 ## 已实现功能
 

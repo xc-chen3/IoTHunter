@@ -2,15 +2,9 @@
 
 English | [中文](README.zh-CN.md)
 
-IoTHunter is a local desktop application for authorized IoT security research. It combines a Go control plane, replaceable local AI runtimes, isolated Python capability workers, an allow-listed Tool Gateway, and a peripheral manager with sessions and leases. The application records the complete research chain:
+IoTHunter is a local desktop platform for IoT security research. It brings together task orchestration, local AI runtimes, isolated analysis capabilities, controlled tool execution, and real peripheral sessions in one auditable client.
 
-```text
-Workspace -> Target -> Conversation -> Task -> Agent -> Capability
-          -> Tool / Worker / Peripheral -> Evidence / Artifact
-          -> Finding -> Validation -> Report / Knowledge
-```
-
-The repository follows the architecture in `IoTHunter_Harness_Architecture_Design_v2.1_Peripheral_Fixed.md`:
+## Architecture
 
 ```text
 Wails + React/TypeScript
@@ -25,6 +19,16 @@ Peripheral Manager -> Serial, TCP/SCPI and additional driver adapters
           |
 SQLite state + artifacts + audit events
 ```
+
+The complete research chain is recorded as:
+
+```text
+Workspace -> Target -> Conversation -> Task -> Agent -> Capability
+          -> Tool / Worker / Peripheral -> Evidence / Artifact
+          -> Finding -> Validation -> Report / Knowledge
+```
+
+The implementation follows `IoTHunter_Harness_Architecture_Design_v2.1_Peripheral_Fixed.md`.
 
 ## What is implemented
 
