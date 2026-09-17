@@ -41,6 +41,7 @@ frontend-install:
 
 frontend-build:
 	npm --prefix desktop/frontend run build
+	rm -rf desktop/wails/frontend-dist/*
 	cp -R desktop/frontend/dist/. desktop/wails/frontend-dist/
 
 wails-build-linux: frontend-build

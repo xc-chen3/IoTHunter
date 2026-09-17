@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -740,7 +741,7 @@ func (a *APIServer) conversationRoutes(w http.ResponseWriter, r *http.Request) {
 		var in struct {
 			Content      string              `json:"content"`
 			CreateTask   bool                `json:"create_task"`
-			RunRuntime   bool                `json:"run_runtime"`
+			RunRuntime   *bool               `json:"run_runtime"`
 			RuntimeID    string              `json:"runtime_id"`
 			TargetID     string              `json:"target_id"`
 			CapabilityID string              `json:"capability_id"`
@@ -758,22 +759,20 @@ func (a *APIServer) conversationRoutes(w http.ResponseWriter, r *http.Request) {
 			in.CapabilityID = "target.fingerprint"
 		}
 		var runtimeResult *RuntimeResult
-		if in.RunRuntime && !in.CreateTask {
-			runtimeID := strings.TrimSpace(in.RuntimeID)
-			if runtimeID == "" {
-				for _, agent := range a.Engine.Store.Snapshot().Agents {
-					if agent.ID == "commander-default" {
-						runtimeID = agent.RuntimeID
-						break
-					}
-				}
+		runRuntime := in.RunRuntime == nil || *in.RunRuntime
+		if runRuntime {
+			runtimeID, resolveErr := a.Engine.ResolveConversationRuntime(in.RuntimeID)
+			if resolveErr != nil {
+				completed := now()
+				runtimeResult = &RuntimeResult{RuntimeID: strings.TrimSpace(in.RuntimeID), Status: "failed", Error: resolveErr.Error(), StartedAt: completed, CompletedAt: &completed}
+			} else {
+				prompt := a.Engine.BuildConversationPrompt(*current, in.Content, in.TargetID)
+				runtimeCtx, cancelRuntime := context.WithTimeout(r.Context(), conversationRuntimeTimeout())
+				result := RunLocalRuntime(runtimeCtx, runtimeID, prompt)
+				cancelRuntime()
+				runtimeResult = &result
+				_ = a.Engine.audit("runtime.conversation."+result.Status, "commander-default", "runtime", runtimeID, map[string]any{"conversation_id": current.ID, "output_bytes": len(result.Output), "error": result.Error})
 			}
-			if runtimeID == "" {
-				writeError(w, http.StatusBadRequest, fmt.Errorf("runtime_id is required when run_runtime is enabled"))
-				return
-			}
-			result := RunLocalRuntime(r.Context(), runtimeID, in.Content)
-			runtimeResult = &result
 		}
 		var createdTask *Task
 		if in.CreateTask {
@@ -789,34 +788,35 @@ func (a *APIServer) conversationRoutes(w http.ResponseWriter, r *http.Request) {
 				writeError(w, http.StatusBadRequest, fmt.Errorf("target_id is required to create a task"))
 				return
 			}
-			task, err := a.Engine.SubmitCapabilityTask(r.Context(), current.WorkspaceID, in.TargetID, in.CapabilityID, in.Content, PermissionSet{Filesystem: "workspace-readonly"}, Budget{MaxRuntimeSeconds: 300, MaxToolCalls: 10})
+			task, err := a.Engine.SubmitConversationCapabilityTask(r.Context(), current.WorkspaceID, in.TargetID, current.ID, in.CapabilityID, in.Content, PermissionSet{Filesystem: "workspace-readonly"}, Budget{MaxRuntimeSeconds: 300, MaxToolCalls: 10}, nil)
 			if err != nil {
 				writeError(w, http.StatusBadRequest, err)
 				return
 			}
 			createdTask = &task
-			_ = a.Engine.Store.UpdateTask(task.ID, func(v *Task) error { v.ConversationID = current.ID; return nil })
-			if linked, ok := a.Engine.Store.Task(task.ID); ok {
-				createdTask = &linked
-			}
 		}
 		if err := a.Engine.Store.UpdateConversation(current.ID, func(c *Conversation) error {
 			c.Messages = append(c.Messages, ConversationMessage{ID: NewID("MSG"), Role: "user", Content: in.Content, References: in.References, CreatedAt: now()})
 			if createdTask != nil {
 				c.TaskIDs = append(c.TaskIDs, createdTask.ID)
 			}
-			reply := "Commander received the request."
+			reply := "Commander recorded the message without invoking a local runtime."
+			references := map[string][]string{}
 			if runtimeResult != nil {
+				if runtimeResult.RuntimeID != "" {
+					references["runtimes"] = []string{runtimeResult.RuntimeID}
+				}
 				if runtimeResult.Status == "completed" {
 					reply = runtimeResult.Output
 				} else {
-					reply = "Runtime execution failed: " + runtimeResult.Error
+					reply = "Local runtime could not answer: " + runtimeResult.Error
 				}
 			}
 			if createdTask != nil {
-				reply = fmt.Sprintf("Task %s was created and queued. I will report node output and the final summary here.", createdTask.ID)
+				references["tasks"] = []string{createdTask.ID}
+				reply += fmt.Sprintf("\n\nTask %s was created and queued. Node output and the final summary will be added to this conversation.", createdTask.ID)
 			}
-			c.Messages = append(c.Messages, ConversationMessage{ID: NewID("MSG"), Role: "assistant", Content: reply, CreatedAt: now()})
+			c.Messages = append(c.Messages, ConversationMessage{ID: NewID("MSG"), Role: "assistant", Content: reply, References: references, CreatedAt: now()})
 			return nil
 		}); err != nil {
 			writeError(w, http.StatusInternalServerError, err)
@@ -828,6 +828,27 @@ func (a *APIServer) conversationRoutes(w http.ResponseWriter, r *http.Request) {
 			}
 			return ""
 		}(), Payload: map[string]any{"role": "user", "content_bytes": len(in.Content)}, CreatedAt: now()})
+		_ = a.Engine.Store.AddEvent(Event{ID: NewID("EVT"), Type: "conversation.message.created", WorkspaceID: current.WorkspaceID, ConversationID: current.ID, TaskID: func() string {
+			if createdTask != nil {
+				return createdTask.ID
+			}
+			return ""
+		}(), Payload: map[string]any{"role": "assistant", "runtime_id": func() string {
+			if runtimeResult != nil {
+				return runtimeResult.RuntimeID
+			}
+			return ""
+		}(), "runtime_status": func() string {
+			if runtimeResult != nil {
+				return runtimeResult.Status
+			}
+			return "not_requested"
+		}()}, CreatedAt: now()})
+		if createdTask != nil {
+			if target, ok := a.Engine.Store.Target(createdTask.TargetID); ok {
+				a.Engine.startTask(context.Background(), *createdTask, target)
+			}
+		}
 		updated := a.Engine.Store.Snapshot().Conversations
 		for _, c := range updated {
 			if c.ID == current.ID {
@@ -887,6 +908,19 @@ func (a *APIServer) conversationRoutes(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+}
+
+func conversationRuntimeTimeout() time.Duration {
+	const fallback = 2 * time.Minute
+	raw := strings.TrimSpace(os.Getenv("IOTHUNTER_CHAT_TIMEOUT_SECONDS"))
+	if raw == "" {
+		return fallback
+	}
+	seconds, err := strconv.Atoi(raw)
+	if err != nil || seconds < 5 || seconds > 600 {
+		return fallback
+	}
+	return time.Duration(seconds) * time.Second
 }
 
 func (a *APIServer) streamConversationEvents(w http.ResponseWriter, r *http.Request, conversationID string) {
@@ -966,6 +1000,7 @@ func (a *APIServer) peripherals(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, fmt.Errorf("workspace not found"))
 		return
 	}
+	normalizePeripheralRecord(&p)
 	if err := peripheralspkg.ValidateConfig(p.Kind, p.Config); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
@@ -974,13 +1009,11 @@ func (a *APIServer) peripherals(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	if existing, ok := findMatchingPeripheral(a.Engine.Store.Snapshot().Peripherals, p); ok {
+		writeError(w, http.StatusConflict, fmt.Errorf("peripheral endpoint is already registered as %s", existing.ID))
+		return
+	}
 	p.ID, p.Status, p.UpdatedAt = NewID("PER"), "offline", now()
-	if p.Config == nil {
-		p.Config = map[string]any{}
-	}
-	if p.SafetyLimits == nil {
-		p.SafetyLimits = map[string]any{}
-	}
 	if err := a.Engine.Store.CreatePeripheral(p); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
@@ -996,7 +1029,19 @@ func (a *APIServer) peripheralRoutes(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusMethodNotAllowed, fmt.Errorf("method not allowed"))
 			return
 		}
-		kind := r.URL.Query().Get("kind")
+		kind := strings.TrimSpace(r.URL.Query().Get("kind"))
+		if r.Body != nil {
+			var in struct {
+				Kind string `json:"kind"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&in); err != nil && err != io.EOF {
+				writeError(w, http.StatusBadRequest, err)
+				return
+			}
+			if kind == "" {
+				kind = strings.TrimSpace(in.Kind)
+			}
+		}
 		if a.Engine.Peripherals == nil {
 			writeError(w, http.StatusServiceUnavailable, fmt.Errorf("peripheral manager is unavailable"))
 			return
@@ -1136,6 +1181,55 @@ func (a *APIServer) peripheralRoutes(w http.ResponseWriter, r *http.Request) {
 	updated, _ := findPeripheral(a.Engine.Store.Snapshot().Peripherals, p.ID)
 	_ = a.Engine.audit("peripheral.updated", "api", "peripheral", p.ID, nil)
 	writeJSON(w, http.StatusOK, updated)
+}
+
+func normalizePeripheralRecord(p *Peripheral) {
+	p.Name = strings.TrimSpace(p.Name)
+	p.Kind = strings.ToLower(strings.TrimSpace(p.Kind))
+	if p.Kind == "uart" {
+		p.Kind = "serial"
+	}
+	p.Address = strings.TrimSpace(p.Address)
+	p.Port = strings.TrimSpace(p.Port)
+	p.Driver = strings.TrimSpace(p.Driver)
+	p.Transport = strings.TrimSpace(p.Transport)
+	if p.Config == nil {
+		p.Config = map[string]any{}
+	} else {
+		p.Config = cloneMap(p.Config)
+	}
+	if p.SafetyLimits == nil {
+		p.SafetyLimits = map[string]any{}
+	}
+	if p.Kind == "serial" {
+		if p.Driver == "" {
+			p.Driver = "go.bug.st/serial"
+		}
+		if p.Transport == "" {
+			p.Transport = "usb-serial"
+		}
+		defaults := map[string]any{"baud_rate": 115200, "data_bits": 8, "stop_bits": 1, "parity": "none", "read_timeout_ms": 250}
+		for key, value := range defaults {
+			if _, ok := p.Config[key]; !ok {
+				p.Config[key] = value
+			}
+		}
+		if len(p.Capabilities) == 0 {
+			p.Capabilities = []string{"serial.open", "serial.configure", "serial.read", "serial.write", "serial.identity"}
+		}
+	}
+}
+
+func findMatchingPeripheral(items []Peripheral, candidate Peripheral) (Peripheral, bool) {
+	if candidate.WorkspaceID == "" || (candidate.Port == "" && candidate.Address == "") {
+		return Peripheral{}, false
+	}
+	for _, item := range items {
+		if item.WorkspaceID == candidate.WorkspaceID && strings.EqualFold(item.Kind, candidate.Kind) && item.Port == candidate.Port && item.Address == candidate.Address {
+			return item, true
+		}
+	}
+	return Peripheral{}, false
 }
 
 func peripheralConfigSchema(kind string) map[string]any {
@@ -1303,8 +1397,10 @@ func (a *APIServer) peripheralSessionRoutes(w http.ResponseWriter, r *http.Reque
 			writeError(w, http.StatusBadGateway, err)
 			return
 		}
-		_ = a.Engine.audit("peripheral.command.completed", session.OwnerID, "peripheral", p.ID, map[string]any{"session_id": session.ID, "command": command})
-		_ = a.Engine.Store.AddEvent(Event{ID: NewID("EVT"), Type: "peripheral.command.completed", WorkspaceID: p.WorkspaceID, Payload: map[string]any{"peripheral_id": p.ID, "session_id": session.ID, "command": command}, CreatedAt: now()})
+		if command != "read" || len(result.Bytes) > 0 {
+			_ = a.Engine.audit("peripheral.command.completed", session.OwnerID, "peripheral", p.ID, map[string]any{"session_id": session.ID, "command": command})
+			_ = a.Engine.Store.AddEvent(Event{ID: NewID("EVT"), Type: "peripheral.command.completed", WorkspaceID: p.WorkspaceID, Payload: map[string]any{"peripheral_id": p.ID, "session_id": session.ID, "command": command}, CreatedAt: now()})
+		}
 		writeJSON(w, http.StatusOK, result)
 	case "telemetry":
 		if r.Method != http.MethodGet {
@@ -1583,6 +1679,7 @@ func (a *APIServer) workspaceRoutes(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, fmt.Errorf("name and kind are required"))
 			return
 		}
+		normalizePeripheralRecord(&p)
 		if err := peripheralspkg.ValidateConfig(p.Kind, p.Config); err != nil {
 			writeError(w, http.StatusBadRequest, err)
 			return
@@ -1591,13 +1688,11 @@ func (a *APIServer) workspaceRoutes(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, err)
 			return
 		}
+		if existing, ok := findMatchingPeripheral(a.Engine.Store.Snapshot().Peripherals, p); ok {
+			writeError(w, http.StatusConflict, fmt.Errorf("peripheral endpoint is already registered as %s", existing.ID))
+			return
+		}
 		p.ID, p.Status, p.UpdatedAt = NewID("PER"), "offline", now()
-		if p.Config == nil {
-			p.Config = map[string]any{}
-		}
-		if p.SafetyLimits == nil {
-			p.SafetyLimits = map[string]any{}
-		}
 		if err := a.Engine.Store.CreatePeripheral(p); err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return

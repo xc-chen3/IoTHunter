@@ -385,7 +385,11 @@ func (m *Manager) Invoke(ctx context.Context, request InvokeRequest) (InvokeResu
 			return InvokeResult{}, err
 		}
 		result := InvokeResult{Status: "completed", Bytes: append([]byte(nil), buf[:n]...), Data: map[string]any{"bytes_read": n, "encoding": "base64"}}
-		m.record(request.SessionID, Telemetry{At: time.Now().UTC(), Command: command, Status: result.Status, Data: result.Data, Bytes: result.Bytes})
+		// A serial timeout with no bytes is a normal polling result. Recording
+		// every empty read would flood telemetry, SQLite, and the audit stream.
+		if n > 0 {
+			m.record(request.SessionID, Telemetry{At: time.Now().UTC(), Command: command, Status: result.Status, Data: result.Data, Bytes: result.Bytes})
+		}
 		return result, nil
 	case "write":
 		if state.Mode == "shared-read" {

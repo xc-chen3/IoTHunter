@@ -14,7 +14,19 @@ func TestRunLocalRuntimeUsesKnownCLIWithoutShell(t *testing.T) {
 		t.Fatal(err)
 	}
 	script := filepath.Join(binDir, "codex")
-	contents := "#!/bin/sh\nprintf 'runtime-ok:%s\\n' \"$3\"\n"
+	contents := `#!/bin/sh
+output=""
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "--output-last-message" ]; then
+    shift
+    output="$1"
+  fi
+  shift
+done
+printf 'runtime-ok:inspect target\n' > "$output"
+printf 'transport-noise\n' >&2
+printf 'fallback-output\n'
+`
 	if err := os.WriteFile(script, []byte(contents), 0o755); err != nil {
 		t.Fatal(err)
 	}

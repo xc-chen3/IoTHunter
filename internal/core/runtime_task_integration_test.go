@@ -14,7 +14,21 @@ func TestTaskUsesBoundLocalRuntimeBeforeCapability(t *testing.T) {
 	if err := os.MkdirAll(binDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(binDir, "codex"), []byte("#!/bin/sh\nprintf 'agent-plan:%s\\n' \"$3\"\n"), 0o755); err != nil {
+	script := `#!/bin/sh
+output=""
+prompt=""
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "--output-last-message" ]; then
+    shift
+    output="$1"
+  else
+    prompt="$1"
+  fi
+  shift
+done
+printf 'agent-plan:%s\n' "$prompt" > "$output"
+`
+	if err := os.WriteFile(filepath.Join(binDir, "codex"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("HOME", home)

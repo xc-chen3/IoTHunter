@@ -230,7 +230,7 @@ func TestAPIConversationTaskExecutionAndDetail(t *testing.T) {
 	}
 	var conversation Conversation
 	_ = json.NewDecoder(res.Body).Decode(&conversation)
-	res = request(http.MethodPost, "/api/v1/conversations/"+conversation.ID+"/message", map[string]any{"content": "fingerprint this target", "create_task": true, "target_id": target.ID})
+	res = request(http.MethodPost, "/api/v1/conversations/"+conversation.ID+"/message", map[string]any{"content": "fingerprint this target", "create_task": true, "run_runtime": false, "target_id": target.ID})
 	if res.Code != http.StatusOK {
 		t.Fatalf("message status = %d, body=%s", res.Code, res.Body.String())
 	}

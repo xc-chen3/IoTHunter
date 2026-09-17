@@ -1580,17 +1580,24 @@ func (e *Engine) SubmitCapabilityTask(ctx context.Context, workspaceID, targetID
 }
 
 func (e *Engine) SubmitCapabilityTaskWithInputs(ctx context.Context, workspaceID, targetID, capabilityID, objective string, permissions PermissionSet, budget Budget, inputs map[string]any) (Task, error) {
-	return e.submitTaskWithCapabilities(ctx, workspaceID, targetID, []string{capabilityID}, objective, permissions, budget, inputs)
+	return e.submitTaskWithCapabilities(ctx, workspaceID, targetID, []string{capabilityID}, objective, permissions, budget, inputs, "", true)
+}
+
+// SubmitConversationCapabilityTask links the conversation before scheduling
+// starts, so fast tasks cannot finish before their node output is routed back
+// to the originating conversation.
+func (e *Engine) SubmitConversationCapabilityTask(ctx context.Context, workspaceID, targetID, conversationID, capabilityID, objective string, permissions PermissionSet, budget Budget, inputs map[string]any) (Task, error) {
+	return e.submitTaskWithCapabilities(ctx, workspaceID, targetID, []string{capabilityID}, objective, permissions, budget, inputs, conversationID, false)
 }
 
 // SubmitCapabilityPlan creates one traceable task for an ordered capability
 // plan. Each capability becomes a node in the same task, so dependencies,
 // evidence, approvals, retry and final summary remain visible as one unit.
 func (e *Engine) SubmitCapabilityPlan(ctx context.Context, workspaceID, targetID string, capabilityIDs []string, objective string, permissions PermissionSet, budget Budget, inputs map[string]any) (Task, error) {
-	return e.submitTaskWithCapabilities(ctx, workspaceID, targetID, capabilityIDs, objective, permissions, budget, inputs)
+	return e.submitTaskWithCapabilities(ctx, workspaceID, targetID, capabilityIDs, objective, permissions, budget, inputs, "", true)
 }
 
-func (e *Engine) submitTaskWithCapabilities(ctx context.Context, workspaceID, targetID string, capabilityIDs []string, objective string, permissions PermissionSet, budget Budget, inputs map[string]any) (Task, error) {
+func (e *Engine) submitTaskWithCapabilities(ctx context.Context, workspaceID, targetID string, capabilityIDs []string, objective string, permissions PermissionSet, budget Budget, inputs map[string]any, conversationID string, start bool) (Task, error) {
 	if len(capabilityIDs) == 0 {
 		return Task{}, errors.New("at least one capability is required")
 	}
@@ -1640,7 +1647,7 @@ func (e *Engine) submitTaskWithCapabilities(ctx context.Context, workspaceID, ta
 		}
 	}
 	e.mu.RUnlock()
-	task := Task{ID: NewID("TASK"), WorkspaceID: workspaceID, TargetID: targetID, Type: "capability.plan", Objective: objective, Priority: 60, Status: TaskQueued, AssignedAgent: assignedAgent, RequiredCapabilities: append([]string(nil), capabilityIDs...), Context: inputs, Permissions: permissions, Budget: budget, CreatedAt: now(), UpdatedAt: now()}
+	task := Task{ID: NewID("TASK"), WorkspaceID: workspaceID, TargetID: targetID, ConversationID: conversationID, Type: "capability.plan", Objective: objective, Priority: 60, Status: TaskQueued, AssignedAgent: assignedAgent, RequiredCapabilities: append([]string(nil), capabilityIDs...), Context: inputs, Permissions: permissions, Budget: budget, CreatedAt: now(), UpdatedAt: now()}
 	if task.Budget.MaxRuntimeSeconds == 0 {
 		task.Budget.MaxRuntimeSeconds = 300
 	}
@@ -1652,7 +1659,9 @@ func (e *Engine) submitTaskWithCapabilities(ctx context.Context, workspaceID, ta
 	}
 	_ = e.Store.AddEvent(Event{ID: NewID("EVT"), Type: "task.created", WorkspaceID: workspaceID, TaskID: task.ID, Payload: map[string]any{"capabilities": capabilityIDs}, CreatedAt: now()})
 	e.setTaskNode(task.ID, "commander", "planning", "completed", "Task plan accepted", map[string]any{"capabilities": capabilityIDs})
-	e.startTask(context.Background(), task, target)
+	if start {
+		e.startTask(context.Background(), task, target)
+	}
 	return task, nil
 }
 

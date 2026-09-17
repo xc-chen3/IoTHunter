@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"go.bug.st/serial"
+	"go.bug.st/serial/enumerator"
 )
 
 type serialAdapter struct{}
@@ -22,13 +23,43 @@ func (serialAdapter) Discover(ctx context.Context) ([]Descriptor, error) {
 		return nil, ctx.Err()
 	default:
 	}
-	ports, err := serial.GetPortsList()
+	ports, err := enumerator.GetDetailedPortsList()
 	if err != nil {
-		return nil, err
+		// Detailed USB information is optional on some platforms. Keep basic
+		// serial discovery available when the platform enumerator is missing.
+		basic, basicErr := serial.GetPortsList()
+		if basicErr != nil {
+			return nil, err
+		}
+		out := make([]Descriptor, 0, len(basic))
+		for _, port := range basic {
+			out = append(out, Descriptor{ID: "serial:" + port, Kind: "serial", Name: port, Driver: "go.bug.st/serial", Endpoint: port, Metadata: map[string]any{"port": port}})
+		}
+		return out, nil
 	}
 	out := make([]Descriptor, 0, len(ports))
 	for _, port := range ports {
-		out = append(out, Descriptor{ID: "serial:" + port, Kind: "serial", Name: port, Driver: "go.bug.st/serial", Endpoint: port, Metadata: map[string]any{"port": port}})
+		if port == nil || strings.TrimSpace(port.Name) == "" {
+			continue
+		}
+		name := port.Name
+		if strings.TrimSpace(port.Product) != "" {
+			name = fmt.Sprintf("%s (%s)", port.Product, port.Name)
+		}
+		metadata := map[string]any{"port": port.Name, "usb": port.IsUSB}
+		if port.VID != "" {
+			metadata["vendor_id"] = port.VID
+		}
+		if port.PID != "" {
+			metadata["product_id"] = port.PID
+		}
+		if port.SerialNumber != "" {
+			metadata["serial_number"] = port.SerialNumber
+		}
+		if port.Product != "" {
+			metadata["product"] = port.Product
+		}
+		out = append(out, Descriptor{ID: "serial:" + port.Name, Kind: "serial", Name: name, Driver: "go.bug.st/serial", Endpoint: port.Name, Metadata: metadata})
 	}
 	return out, nil
 }
@@ -74,8 +105,35 @@ func (h *serialHandle) Drain() error                { return h.port.Drain() }
 func (h *serialHandle) Identity(context.Context) (map[string]any, error) {
 	identity := cloneConfig(h.config)
 	identity["transport"], identity["port"] = "serial", h.endpoint
-	identity["baud_rate"], identity["data_bits"], identity["stop_bits"], identity["parity"] = h.mode.BaudRate, h.mode.DataBits, h.mode.StopBits, h.mode.Parity
+	identity["baud_rate"], identity["data_bits"] = h.mode.BaudRate, h.mode.DataBits
+	identity["stop_bits"], identity["parity"] = serialStopBits(h.mode.StopBits), serialParity(h.mode.Parity)
 	return identity, nil
+}
+
+func serialParity(value serial.Parity) string {
+	switch value {
+	case serial.OddParity:
+		return "odd"
+	case serial.EvenParity:
+		return "even"
+	case serial.MarkParity:
+		return "mark"
+	case serial.SpaceParity:
+		return "space"
+	default:
+		return "none"
+	}
+}
+
+func serialStopBits(value serial.StopBits) int {
+	switch value {
+	case serial.TwoStopBits:
+		return 2
+	case serial.OnePointFiveStopBits:
+		return 3
+	default:
+		return 1
+	}
 }
 
 func (h *serialHandle) CurrentConfig(context.Context) (map[string]any, error) {

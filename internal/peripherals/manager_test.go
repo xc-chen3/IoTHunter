@@ -148,3 +148,27 @@ func TestManagerTelemetryObserverReceivesTopicWithoutBlockingCommand(t *testing.
 		t.Fatal("timed out waiting for telemetry observer")
 	}
 }
+
+func TestManagerEmptySerialPollDoesNotCreateTelemetry(t *testing.T) {
+	m := NewManager()
+	m.Register(fakeAdapter{})
+	session, err := m.Connect(context.Background(), OpenRequest{PeripheralID: "P-poll", Kind: "fake"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Disconnect(context.Background(), session.ID)
+	result, err := m.Invoke(context.Background(), InvokeRequest{SessionID: session.ID, Command: "read", Args: map[string]any{"max_bytes": 128}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Data["bytes_read"] != 0 {
+		t.Fatalf("empty poll returned %+v", result)
+	}
+	events, err := m.Telemetry(session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 0 {
+		t.Fatalf("empty poll created telemetry: %+v", events)
+	}
+}
